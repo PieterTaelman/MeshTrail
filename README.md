@@ -46,6 +46,27 @@ Or press F5 on `Meshtrail.AppHost` in Visual Studio / Rider. The Aspire dashboar
 
 Dashboard command **Rebuild database** (on `MeshtrailDatabase`) drops all local data and rebuilds from scratch.
 
+### Mesh gateway (Meshtastic)
+
+In Development the API runs a **simulated** mesh (5 fake nodes around Belgium), so no hardware is needed. To use your
+real gateway node, put its address in user secrets (never in appsettings, never in git):
+
+```bash
+dotnet user-secrets set "Meshtastic:Gateway:Mode" "Tcp" --project Code/Server/Meshtrail.WebApi
+dotnet user-secrets set "Meshtastic:Gateway:Host" "<node-ip>" --project Code/Server/Meshtrail.WebApi
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Meshtastic:Gateway:Mode` | `Tcp` (`Simulated` in Development) | Real node over WiFi or the fake mesh |
+| `Meshtastic:Gateway:Host` / `Port` | — / `4403` | Address of the gateway node |
+| `Meshtastic:Outbound:MinInterval` | `00:00:10` | Minimum pause between packets we send (EU868 duty cycle) |
+| `Meshtastic:Retention:PositionDays` | `30` | Position history kept this many days |
+| `Jobs:NodePositionRetention` | enabled, `15 3 * * *` | Schedule of the history clean-up |
+
+The node accepts one TCP client only: close the phone app's WiFi connection first. Details, all keys and how to set up
+a node: [Documentation/Mesh/README.md](Documentation/Mesh/README.md).
+
 ### Connect with SSMS / Azure Data Studio
 
 - Server: `127.0.0.1,14330` — use the IP, **not** `localhost` (avoids named-pipe/IPv6 lookups that fail against the container)

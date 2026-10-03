@@ -4,3 +4,7 @@
 # Changing any listed file (or this list) changes the schema hash, so the local database is rebuilt.
 
 dbo/Tables/Samples.sql
+dbo/Tables/MeshGateways.sql
+dbo/Tables/MeshNodes.sql
+dbo/Tables/NodePositions.sql
+dbo/Tables/NodeTraceroutes.sql

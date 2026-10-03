@@ -4,6 +4,7 @@ using Meshtrail.Core.Application;
 using Meshtrail.Core.Application.Abstractions;
 using Meshtrail.Core.Application.Behaviors;
 using Meshtrail.Core.Infrastructure;
+using Meshtrail.Core.Infrastructure.Mesh;
 using Meshtrail.Core.Infrastructure.Persistence;
 using Meshtrail.WebApi.Authentication;
 using Meshtrail.WebApi.Infrastructure;
@@ -17,7 +18,9 @@ builder.AddServiceDefaults();
 
 builder.Services
     .AddApplication()
-    .AddInfrastructure(builder.Configuration);
+    .AddInfrastructure(builder.Configuration)
+    // The Meshtastic gateway runs inside this process (see Documentation/Mesh/README.md).
+    .AddMesh(builder.Configuration);
 
 // The source generator writes AddMediator at compile time from this lambda, so keep it a plain literal.
 builder.Services.AddMediator((MediatorOptions options) =>
@@ -60,7 +63,9 @@ builder.Services
 builder.Services.AddSignalR();
 
 builder.Services.AddHealthChecks()
-    .AddDbContextCheck<MeshtrailDbContext>("database");
+    .AddDbContextCheck<MeshtrailDbContext>("database")
+    // Reports Degraded (never Unhealthy) while the radio is offline, so /health/ready stays 200.
+    .AddCheck<MeshGatewayHealthCheck>(MeshGatewayHealthCheck.Name);
 
 const string CorsPolicy = "client-web";
 builder.Services.AddCors(options => options.AddPolicy(CorsPolicy, policy => policy

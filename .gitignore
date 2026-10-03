@@ -36,3 +36,6 @@ appsettings.*.local.json
 # SSDT model cache (Visual Studio keeps it locked while open)
 *.dbmdl
 *.jfm
+
+# Local launch profiles of the probe hold the node IP; never commit them.
+Code/Tools/Meshtrail.MeshProbe/Properties/launchSettings.json

@@ -23,7 +23,10 @@ export class App {
   protected readonly realtimeStatus = inject(RealtimeService).status;
   protected readonly theme = inject(ThemeService);
 
-  protected readonly navigation: NavItem[] = [{ label: 'Samples', link: '/samples' }];
+  protected readonly navigation: NavItem[] = [
+    { label: 'Operations', link: '/operations' },
+    { label: 'Samples', link: '/samples' },
+  ];
 
   /** UTC clock in the status bar, ticking every second. */
   protected readonly now = signal(new Date());

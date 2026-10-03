@@ -48,6 +48,7 @@ await using IMeshRadio radio = options.Mode == MeshRadioMode.Simulated
 
 Console.WriteLine($"Connecting to {radio.Description} ...");
 await radio.ConnectAsync(cancellation.Token);
+var connectedAt = DateTime.Now;
 Console.WriteLine("Connected. Waiting for the config dump (Ctrl+C to stop).");
 
 try
@@ -57,7 +58,7 @@ try
         Console.WriteLine($"{DateTime.Now:HH:mm:ss} {Describe(message)}");
     }
 
-    Console.WriteLine("The node closed the connection.");
+    Console.WriteLine($"{DateTime.Now:HH:mm:ss} The node closed the connection after {DateTime.Now - connectedAt:c}.");
 }
 catch (OperationCanceledException)
 {
@@ -65,7 +66,8 @@ catch (OperationCanceledException)
 }
 catch (Exception exception)
 {
-    Console.WriteLine($"Connection lost: {exception.Message}");
+    // The duration helps tell causes apart: seconds = another client took over, ~15 min = missing heartbeat.
+    Console.WriteLine($"{DateTime.Now:HH:mm:ss} Connection lost after {DateTime.Now - connectedAt:c}: {exception.Message}");
     return 2;
 }
 

@@ -68,6 +68,10 @@
   </ItemGroup>
   <ItemGroup>
     <Build Include="dbo\Tables\Samples.sql" />
+    <Build Include="dbo\Tables\MeshGateways.sql" />
+    <Build Include="dbo\Tables\MeshNodes.sql" />
+    <Build Include="dbo\Tables\NodePositions.sql" />
+    <Build Include="dbo\Tables\NodeTraceroutes.sql" />
   </ItemGroup>
   <ItemGroup>
     <!-- Seed data is not part of the schema model; the AppHost runs it on every start. -->

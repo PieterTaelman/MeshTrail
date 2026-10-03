@@ -1,10 +1,15 @@
 using Meshtrail.Core.Application.Repositories;
+using Meshtrail.Core.Application.Abstractions;
 using Meshtrail.Core.Infrastructure.Jobs;
+using Meshtrail.Core.Infrastructure.Mesh;
 using Meshtrail.Core.Infrastructure.Repositories;
 using Meshtrail.Core.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Meshtrail.Mesh.Radio;
 
 namespace Meshtrail.Core.Infrastructure;
 
@@ -21,9 +26,39 @@ public static class DependencyInjection
             sql => sql.EnableRetryOnFailure()));
 
         services.AddScoped<ISampleRepository, SampleRepository>();
+        services.AddScoped<IMeshNodeRepository, MeshNodeRepository>();
+        services.AddScoped<IMeshGatewayRepository, MeshGatewayRepository>();
+        services.AddScoped<INodeTracerouteRepository, NodeTracerouteRepository>();
 
         services.AddCronJob<SampleStatisticsJob>(configuration, SampleStatisticsJob.Name);
 
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the Meshtastic gateway: the radio chosen by Meshtastic:Gateway:Mode, the worker that runs it inside
+    /// this process, and the position retention job. Add the health check with <see cref="MeshGatewayHealthCheck"/>.
+    /// </summary>
+    public static IServiceCollection AddMesh(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<MeshRadioOptions>(configuration.GetSection(MeshRadioOptions.SectionName));
+        services.Configure<MeshOutboundOptions>(configuration.GetSection(MeshOutboundOptions.SectionName));
+        services.Configure<MeshRetentionOptions>(configuration.GetSection(MeshRetentionOptions.SectionName));
+
+        services.AddSingleton<IMeshRadio>(provider =>
+        {
+            var options = provider.GetRequiredService<IOptions<MeshRadioOptions>>().Value;
+            var time = provider.GetRequiredService<TimeProvider>();
+            return options.Mode == MeshRadioMode.Simulated
+                ? new SimulatedMeshRadio(options, time)
+                : new TcpMeshRadio(options, time, provider.GetRequiredService<ILogger<TcpMeshRadio>>());
+        });
+
+        services.AddSingleton<MeshGatewayService>();
+        services.AddSingleton<IMeshGateway>(provider => provider.GetRequiredService<MeshGatewayService>());
+        services.AddHostedService<MeshGatewayWorker>();
+
+        services.AddCronJob<NodePositionRetentionJob>(configuration, NodePositionRetentionJob.Name);
         return services;
     }
 

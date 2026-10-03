@@ -2,10 +2,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Meshtrail.Core.Application\Meshtrail.Core.Application.csproj" />
+    <ProjectReference Include="..\Meshtrail.Mesh\Meshtrail.Mesh.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="Cronos" />

@@ -23,9 +23,19 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "maplibre-gl-worker.mjs",
+                "input": "node_modules/maplibre-gl/dist",
+                "output": "maplibre"
+              },
+              {
+                "glob": "maplibre-gl-shared.mjs",
+                "input": "node_modules/maplibre-gl/dist",
+                "output": "maplibre"
               }
             ],
-            "styles": ["src/styles.css"]
+            "styles": ["node_modules/maplibre-gl/dist/maplibre-gl.css", "src/styles.css"]
           },
           "configurations": {
             "production": {
