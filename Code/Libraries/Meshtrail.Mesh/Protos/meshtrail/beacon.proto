@@ -1,0 +1,32 @@
+// Meshtrail's own SOS payload, sent on portnum PRIVATE_APP (256) by Meshtrail devices.
+// Stock Meshtastic devices use plain text ("SOS ...") or the bell character instead.
+syntax = "proto3";
+
+package meshtrail;
+
+option csharp_namespace = "Meshtrail.Mesh.Protobufs";
+
+message MeshtrailBeacon {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_MEDICAL = 1;
+    KIND_LOST = 2;
+    KIND_INJURED = 3;
+    KIND_OTHER = 4;
+  }
+
+  // Degrees (WGS84). 0/0 together means "no fix".
+  double latitude = 1;
+  double longitude = 2;
+
+  // Horizontal accuracy in metres; 0 = unknown.
+  float accuracy_m = 3;
+
+  Kind kind = 4;
+
+  // Short free text from the person in need.
+  string text = 5;
+
+  // True when the person cancels the SOS (false alarm or no longer needed).
+  bool cancel = 6;
+}

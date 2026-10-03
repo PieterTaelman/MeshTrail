@@ -6,3 +6,4 @@ the code — read them as history. Name files `YYYY-MM-DD-short-topic.md`.
 | Date | Record |
 |---|---|
 | 2026-10-03 | [Bootstrap decisions](2026-10-03-bootstrap-decisions.md) |
+| 2026-10-03 | [Mesh gateway decisions](2026-10-03-mesh-gateway-decisions.md) |

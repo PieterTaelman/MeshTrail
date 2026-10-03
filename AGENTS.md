@@ -34,6 +34,7 @@ for new features; it will be renamed or removed once the real domain arrives.
 |---|---|
 | [README.md](README.md) | Getting started, prerequisites, running the AppHost, SSMS |
 | [Documentation/README.md](Documentation/README.md) | Index of living docs |
+| [Documentation/Mesh/README.md](Documentation/Mesh/README.md) | The Meshtastic gateway, simulator and how to connect a real node |
 | [Documentation/Samples/README.md](Documentation/Samples/README.md) | The reference module end-to-end (class diagram, DB schema, request flow) |
 | [Documentation/Research/](Documentation/Research/) | Point-in-time decision records (history, not kept in sync) |
 | [Client-Web/AGENTS.md](Client-Web/AGENTS.md) | Angular standards |
@@ -49,9 +50,12 @@ Code/Libraries/Meshtrail.Core.Contracts       request/response records of the AP
 Code/Libraries/Meshtrail.Core.Application     use cases (commands/queries/handlers/validators), repository interfaces,
                                               behaviors, ICurrentUser, domain → contract mapping
 Code/Libraries/Meshtrail.Core.Infrastructure  EF DbContext, Db* entities, mappers, repositories, cron jobs
+Code/Libraries/Meshtrail.Mesh                 Meshtastic protocol: vendored protobufs, framing, IMeshRadio (TCP +
+                                              simulator), contact links — depends on nothing from Core
 Code/Server/Meshtrail.WebApi                  composition root + controllers only (Mediator source generator lives here)
 Code/Server/Meshtrail.ServiceDefaults         OpenTelemetry, health checks, resilience, service discovery
 Code/Server/Meshtrail.AppHost                 Aspire orchestrator (local development only)
+Code/Tools/Meshtrail.MeshProbe                console tool: connect to a node and print what it says
 Code/Tests/Meshtrail.Core.UnitTests           domain, handlers, validators, behaviors — no DB, no HTTP
 Code/Tests/Meshtrail.Core.IntegrationTests    API tests against a real SQL Server
 Code/Database/Meshtrail.Database              SSDT project: tables + seed scripts

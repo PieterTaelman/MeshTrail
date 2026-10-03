@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Developer tool: connects to a Meshtastic node and prints what it says. Not deployed. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Libraries\Meshtrail.Mesh\Meshtrail.Mesh.csproj" />
+  </ItemGroup>
+
+</Project>

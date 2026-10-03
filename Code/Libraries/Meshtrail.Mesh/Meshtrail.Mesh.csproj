@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Meshtastic protocol + radio access. Depends on nothing from Meshtrail.Core on purpose,
+    so the probe tool and tests can use it on its own. Infrastructure adapts it to the application.
+  -->
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Tools">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Vendored from github.com/meshtastic/protobufs, tag v2.8.1 (GPL-3.0). Messages only, no gRPC services. -->
+    <Protobuf Include="Protos\**\*.proto" ProtoRoot="Protos" GrpcServices="None" Access="Public" />
+  </ItemGroup>
+
+</Project>

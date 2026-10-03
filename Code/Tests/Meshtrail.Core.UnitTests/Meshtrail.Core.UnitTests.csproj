@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Libraries\Meshtrail.Core.Application\Meshtrail.Core.Application.csproj" />
     <ProjectReference Include="..\..\Libraries\Meshtrail.Core.Infrastructure\Meshtrail.Core.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Libraries\Meshtrail.Mesh\Meshtrail.Mesh.csproj" />
   </ItemGroup>
 
   <ItemGroup>

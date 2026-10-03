@@ -15,11 +15,15 @@
     <Project Path="Code/Libraries/Meshtrail.Core.Contracts/Meshtrail.Core.Contracts.csproj" />
     <Project Path="Code/Libraries/Meshtrail.Core.Application/Meshtrail.Core.Application.csproj" />
     <Project Path="Code/Libraries/Meshtrail.Core.Infrastructure/Meshtrail.Core.Infrastructure.csproj" />
+    <Project Path="Code/Libraries/Meshtrail.Mesh/Meshtrail.Mesh.csproj" />
   </Folder>
   <Folder Name="/Server/">
     <Project Path="Code/Server/Meshtrail.WebApi/Meshtrail.WebApi.csproj" />
     <Project Path="Code/Server/Meshtrail.ServiceDefaults/Meshtrail.ServiceDefaults.csproj" />
     <Project Path="Code/Server/Meshtrail.AppHost/Meshtrail.AppHost.csproj" />
+  </Folder>
+  <Folder Name="/Tools/">
+    <Project Path="Code/Tools/Meshtrail.MeshProbe/Meshtrail.MeshProbe.csproj" />
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Code/Tests/Meshtrail.Core.UnitTests/Meshtrail.Core.UnitTests.csproj" />
