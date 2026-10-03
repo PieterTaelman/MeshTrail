@@ -1,0 +1,24 @@
+/* Layer order must match provideOptimus cssLayer.order, so Tailwind utilities can override Optimus styles. */
+@layer theme, base, optimus, components, utilities;
+
+@import 'tailwindcss';
+
+/* Make Optimus design tokens usable as Tailwind colours, e.g. bg-surface-0, text-primary, text-muted-color. */
+@theme inline {
+  --color-primary: var(--p-primary-color);
+  --color-surface-0: var(--p-surface-0);
+  --color-surface-50: var(--p-surface-50);
+  --color-surface-200: var(--p-surface-200);
+  --color-surface-900: var(--p-surface-900);
+  --color-muted-color: var(--p-text-muted-color);
+}
+
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+}

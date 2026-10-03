@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      semVer: ${{ steps.gitversion.outputs.semVer }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # GitVersion needs the full history and tags
+      - uses: gittools/actions/gitversion/setup@v4
+        with:
+          versionSpec: '6.x'
+      - id: gitversion
+        uses: gittools/actions/gitversion/execute@v4
+        with:
+          configFilePath: gitversion.yml
+
+  backend:
+    runs-on: ubuntu-latest
+    needs: version
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - name: Restore
+        run: dotnet restore Meshtrail.slnx
+      - name: Build (warnings are errors)
+        run: dotnet build Meshtrail.slnx --no-restore -c Release -p:Version=${{ needs.version.outputs.semVer }}
+      - name: Unit tests
+        run: dotnet test --project Code/Tests/Meshtrail.Core.UnitTests --no-build -c Release
+      # Docker is available on GitHub-hosted Ubuntu runners, so Testcontainers starts a real SQL Server.
+      - name: Integration tests
+        run: dotnet test --project Code/Tests/Meshtrail.Core.IntegrationTests --no-build -c Release
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Client-Web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: Client-Web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run build

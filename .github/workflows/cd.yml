@@ -1,0 +1,17 @@
+name: cd
+
+# Stub: deployment is on-prem and not defined yet.
+# Expected later: build the WebApi + Angular artifacts, build the .sqlproj dacpac (Windows runner with SSDT),
+# publish the dacpac with SqlPackage, deploy the app to the on-prem servers.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Deployment is not defined yet (on-prem). See .github/workflows/cd.yml."

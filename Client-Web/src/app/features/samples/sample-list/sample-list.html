@@ -1,0 +1,70 @@
+<section class="flex flex-col gap-4">
+  <header class="flex flex-wrap items-center justify-between gap-3">
+    <h1 class="text-2xl font-semibold">Samples</h1>
+    <p-button label="New sample" routerLink="/samples/new" />
+  </header>
+
+  <div class="flex flex-wrap gap-3">
+    <input
+      pInputText
+      type="search"
+      class="w-72"
+      placeholder="Search name or description"
+      aria-label="Search samples"
+      [ngModel]="searchText()"
+      (ngModelChange)="onSearch($event)"
+    />
+    <p-select
+      class="w-56"
+      placeholder="Created by"
+      ariaLabel="Filter on creator"
+      [options]="filterOptions.value()?.createdBy ?? []"
+      [showClear]="true"
+      [ngModel]="createdBy()"
+      (ngModelChange)="onCreatedByChange($event)"
+    />
+  </div>
+
+  @if (error(); as message) {
+    <p-message severity="error" [text]="message" />
+  }
+
+  <p-table
+    [value]="rows()"
+    [lazy]="true"
+    [paginator]="true"
+    [rows]="pageSize()"
+    [first]="first()"
+    [rowsPerPageOptions]="pageSizeOptions"
+    [totalRecords]="totalCount()"
+    [loading]="grid.isLoading()"
+    dataKey="id"
+    (onLazyLoad)="onLazyLoad($event)"
+  >
+    <ng-template #header>
+      <tr>
+        <th pSortableColumn="name">Name <p-sortIcon field="name" /></th>
+        <th>Description</th>
+        <th pSortableColumn="createdBy">Created by <p-sortIcon field="createdBy" /></th>
+        <th pSortableColumn="createdAt">Created at <p-sortIcon field="createdAt" /></th>
+      </tr>
+    </ng-template>
+    <ng-template #body let-sample>
+      <tr>
+        <td>
+          <a class="text-primary underline" [routerLink]="['/samples', sample.id]">{{
+            sample.name
+          }}</a>
+        </td>
+        <td class="text-muted-color">{{ sample.description }}</td>
+        <td>{{ sample.createdBy }}</td>
+        <td>{{ sample.createdAt | date: 'short' }}</td>
+      </tr>
+    </ng-template>
+    <ng-template #emptymessage>
+      <tr>
+        <td colspan="4">No samples found.</td>
+      </tr>
+    </ng-template>
+  </p-table>
+</section>

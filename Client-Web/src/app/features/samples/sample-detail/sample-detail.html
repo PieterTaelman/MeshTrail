@@ -1,0 +1,76 @@
+<section class="flex max-w-2xl flex-col gap-4">
+  <a routerLink="/samples" class="text-primary underline">← Back to samples</a>
+  <h1 class="text-2xl font-semibold">{{ isNew() ? 'New sample' : 'Edit sample' }}</h1>
+
+  @if (error(); as message) {
+    <p-message severity="error">
+      <div class="flex flex-wrap items-center gap-2">
+        <span>{{ message }}</span>
+        @if (conflict()) {
+          <p-button label="Reload latest version" [text]="true" size="small" (onClick)="reload()" />
+        }
+      </div>
+    </p-message>
+  }
+
+  @if (sample.isLoading()) {
+    <p>Loading…</p>
+  } @else {
+    <form class="flex flex-col gap-4" [formGroup]="form" (ngSubmit)="save()">
+      <div class="flex flex-col gap-1">
+        <label for="name" class="font-medium">Name</label>
+        <input pInputText id="name" formControlName="name" maxlength="200" />
+        @if (form.controls.name.touched && form.controls.name.invalid) {
+          <small class="text-red-600">A name is required (max 200 characters).</small>
+        }
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label for="description" class="font-medium">Description</label>
+        <textarea
+          pTextarea
+          id="description"
+          formControlName="description"
+          rows="5"
+          maxlength="2000"
+        ></textarea>
+      </div>
+
+      @if (sample.value(); as current) {
+        <p class="text-sm text-muted-color">
+          Created by {{ current.createdBy }}
+          @if (current.modifiedBy) {
+            · last changed by {{ current.modifiedBy }}
+          }
+        </p>
+      }
+
+      <div class="flex flex-wrap gap-2">
+        <p-button type="submit" label="Save" [loading]="saving()" [disabled]="conflict()" />
+        @if (!isNew()) {
+          @if (confirmDelete()) {
+            <p-button
+              label="Yes, delete"
+              severity="danger"
+              [loading]="saving()"
+              (onClick)="delete()"
+            />
+            <p-button
+              label="Cancel"
+              severity="secondary"
+              [text]="true"
+              (onClick)="confirmDelete.set(false)"
+            />
+          } @else {
+            <p-button
+              label="Delete"
+              severity="danger"
+              [outlined]="true"
+              (onClick)="confirmDelete.set(true)"
+            />
+          }
+        }
+      </div>
+    </form>
+  }
+</section>

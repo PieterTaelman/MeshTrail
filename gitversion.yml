@@ -1,0 +1,5 @@
+# Semantic versions from git history (GitVersion 6). Tag a release on main as v1.2.3.
+workflow: GitHubFlow/v1
+next-version: 0.1.0
+assembly-versioning-scheme: MajorMinorPatch
+assembly-file-versioning-scheme: MajorMinorPatchTag
