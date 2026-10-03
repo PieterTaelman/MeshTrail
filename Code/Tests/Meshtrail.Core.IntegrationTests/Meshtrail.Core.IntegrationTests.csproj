@@ -1,0 +1,19 @@
+<Project Sdk="MSTest.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Server\Meshtrail.WebApi\Meshtrail.WebApi.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="Testcontainers.MsSql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Same schema builder the AppHost uses, so tests run against the real .sqlproj schema. -->
+    <Compile Include="..\..\Database\Tooling\*.cs" Link="Database\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

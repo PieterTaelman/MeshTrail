@@ -1,0 +1,20 @@
+<Project>
+  <!-- Shared settings for every C# project. The SSDT .sqlproj is left out on purpose. -->
+  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <Deterministic>true</Deterministic>
+    <Company>Meshtrail</Company>
+    <Product>Meshtrail</Product>
+  </PropertyGroup>
+
+  <!-- Unit tests may use internal types; Moq needs DynamicProxyGenAssembly2 to mock them. -->
+  <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' And !$(MSBuildProjectName.EndsWith('Tests'))">
+    <InternalsVisibleTo Include="Meshtrail.Core.UnitTests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+</Project>

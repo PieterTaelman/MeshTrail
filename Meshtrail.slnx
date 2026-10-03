@@ -1,0 +1,35 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="AGENTS.md" />
+    <File Path="CLAUDE.md" />
+    <File Path="README.md" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Build.targets" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="NuGet.config" />
+    <File Path=".editorconfig" />
+  </Folder>
+  <Folder Name="/Libraries/">
+    <Project Path="Code/Libraries/Meshtrail.Core.Domain/Meshtrail.Core.Domain.csproj" />
+    <Project Path="Code/Libraries/Meshtrail.Core.Contracts/Meshtrail.Core.Contracts.csproj" />
+    <Project Path="Code/Libraries/Meshtrail.Core.Application/Meshtrail.Core.Application.csproj" />
+    <Project Path="Code/Libraries/Meshtrail.Core.Infrastructure/Meshtrail.Core.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/Server/">
+    <Project Path="Code/Server/Meshtrail.WebApi/Meshtrail.WebApi.csproj" />
+    <Project Path="Code/Server/Meshtrail.ServiceDefaults/Meshtrail.ServiceDefaults.csproj" />
+    <Project Path="Code/Server/Meshtrail.AppHost/Meshtrail.AppHost.csproj" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="Code/Tests/Meshtrail.Core.UnitTests/Meshtrail.Core.UnitTests.csproj" />
+    <Project Path="Code/Tests/Meshtrail.Core.IntegrationTests/Meshtrail.Core.IntegrationTests.csproj" />
+  </Folder>
+  <Folder Name="/Database/">
+    <File Path="Code/Database/Scripts_Core.txt" />
+    <!-- Visual Studio builds this with SSDT; `dotnet build` skips it (classic SSDT format). -->
+    <Project Path="Code/Database/Meshtrail.Database/Meshtrail.Database.sqlproj" Type="00d1a9c2-b5f0-4af3-8072-f6c62b433612">
+      <Build Solution="*|*" Project="false" />
+    </Project>
+  </Folder>
+</Solution>

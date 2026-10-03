@@ -1,0 +1,13 @@
+<Project Sdk="MSTest.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Libraries\Meshtrail.Core.Application\Meshtrail.Core.Application.csproj" />
+    <ProjectReference Include="..\..\Libraries\Meshtrail.Core.Infrastructure\Meshtrail.Core.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Moq" />
+    <PackageReference Include="Shouldly" />
+  </ItemGroup>
+
+</Project>

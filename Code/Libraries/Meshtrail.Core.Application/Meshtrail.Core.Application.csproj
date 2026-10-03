@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Meshtrail.Core.Domain\Meshtrail.Core.Domain.csproj" />
+    <ProjectReference Include="..\Meshtrail.Core.Contracts\Meshtrail.Core.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Abstractions only: the source generator lives in Meshtrail.WebApi. -->
+    <PackageReference Include="Mediator.Abstractions" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+</Project>

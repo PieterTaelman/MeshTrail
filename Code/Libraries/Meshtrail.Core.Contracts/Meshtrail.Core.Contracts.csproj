@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Request/response records exposed by the API. No dependencies so any client can reference it. -->
+
+</Project>

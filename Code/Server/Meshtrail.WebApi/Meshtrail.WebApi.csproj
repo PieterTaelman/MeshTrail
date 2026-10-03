@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <UserSecretsId>meshtrail-webapi</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Libraries\Meshtrail.Core.Infrastructure\Meshtrail.Core.Infrastructure.csproj" />
+    <ProjectReference Include="..\Meshtrail.ServiceDefaults\Meshtrail.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The ONLY project with the Mediator source generator. It generates the mediator for the whole app. -->
+    <PackageReference Include="Mediator.SourceGenerator">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Mediator.Abstractions" />
+    <PackageReference Include="Asp.Versioning.Mvc" />
+    <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" />
+    <PackageReference Include="Asp.Versioning.OpenApi" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
+    <PackageReference Include="Scalar.AspNetCore" />
+  </ItemGroup>
+
+</Project>

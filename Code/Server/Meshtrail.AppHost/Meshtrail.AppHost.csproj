@@ -1,0 +1,30 @@
+<Project Sdk="Aspire.AppHost.Sdk">
+
+  <!-- Local development only. Production is deployed on-prem without Aspire. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <UserSecretsId>meshtrail-apphost</UserSecretsId>
+    <!-- F5 / dotnet run works without the Aspire CLI installed. -->
+    <AspireUseCliBundle>false</AspireUseCliBundle>
+    <!-- ASPIRE010 only warns that the CLI bundle is off, which is intentional. -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Meshtrail.WebApi\Meshtrail.WebApi.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.JavaScript" />
+    <PackageReference Include="Aspire.Hosting.SqlServer" />
+    <PackageReference Include="CommunityToolkit.Aspire.Hosting.MailPit" />
+    <PackageReference Include="CommunityToolkit.Aspire.Hosting.SqlServer.Extensions" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared with the integration tests: builds the schema script from the .sqlproj. -->
+    <Compile Include="..\..\Database\Tooling\*.cs" Link="Database\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

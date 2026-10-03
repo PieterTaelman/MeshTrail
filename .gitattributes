@@ -1,0 +1,15 @@
+# LF line endings everywhere, also on Windows.
+* text=auto eol=lf
+
+# Binary files: never convert them.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.dacpac binary
+*.pdf binary

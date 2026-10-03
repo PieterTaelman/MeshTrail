@@ -1,0 +1,60 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Label="Microsoft / .NET">
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.1.1" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.10.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Application">
+    <PackageVersion Include="Mediator.Abstractions" Version="3.0.2" />
+    <PackageVersion Include="Mediator.SourceGenerator" Version="3.0.2" />
+    <PackageVersion Include="FluentValidation" Version="12.1.1" />
+    <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
+    <PackageVersion Include="Cronos" Version="0.13.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Web API">
+    <PackageVersion Include="Asp.Versioning.Mvc" Version="10.2.1" />
+    <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.2.1" />
+    <PackageVersion Include="Asp.Versioning.OpenApi" Version="10.2.3" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.17.13" />
+  </ItemGroup>
+
+  <ItemGroup Label="OpenTelemetry">
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.19.1" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.19.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.19.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.19.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.SqlClient" Version="1.19.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Aspire (local development only)">
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.5.4" />
+    <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.5.4" />
+    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.MailPit" Version="13.5.0" />
+    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.SqlServer.Extensions" Version="13.5.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Testing">
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
+    <PackageVersion Include="Moq" Version="4.21.0" />
+    <PackageVersion Include="Shouldly" Version="4.3.0" />
+    <PackageVersion Include="Testcontainers.MsSql" Version="4.15.0" />
+    <!-- Verify 33+ needs a SponsorCheck licence property (maintenance fee) before it builds. Pending decision, so no project references it yet. -->
+    <PackageVersion Include="Verify.MSTest" Version="33.2.0" />
+  </ItemGroup>
+</Project>

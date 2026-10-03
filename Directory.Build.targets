@@ -1,0 +1,13 @@
+<Project>
+  <!-- Hard rule: SysLib is an internal library we may not use here, so the build fails if it sneaks in. -->
+  <Target Name="MeshtrailBanSysLib" BeforeTargets="CollectPackageReferences" Condition="'$(MSBuildProjectExtension)' == '.csproj'">
+    <Error Condition="$([System.String]::Copy('%(PackageReference.Identity)').StartsWith('SysLib', System.StringComparison.OrdinalIgnoreCase))"
+           Text="Package '%(PackageReference.Identity)' is not allowed: SysLib.* packages are banned in Meshtrail. See AGENTS.md." />
+  </Target>
+
+  <!-- Only the host may run the Mediator source generator; a second copy in the same app breaks the build. -->
+  <Target Name="MeshtrailSingleMediatorGenerator" BeforeTargets="CollectPackageReferences" Condition="'$(MSBuildProjectExtension)' == '.csproj' And '$(MSBuildProjectName)' != 'Meshtrail.WebApi'">
+    <Error Condition="'%(PackageReference.Identity)' == 'Mediator.SourceGenerator'"
+           Text="Mediator.SourceGenerator may only be referenced by Meshtrail.WebApi. Reference Mediator.Abstractions instead." />
+  </Target>
+</Project>

@@ -1,0 +1,6 @@
+# Table scripts of Meshtrail.Database in DEPENDENCY ORDER (a table must come after the tables it references).
+# The AppHost and the integration tests concatenate these files into one schema script.
+# Paths are relative to Meshtrail.Database/. Lines starting with # are comments.
+# Changing any listed file (or this list) changes the schema hash, so the local database is rebuilt.
+
+dbo/Tables/Samples.sql
