@@ -9,7 +9,8 @@ Worked example to copy: `src/app/features/samples/` (list + detail page against 
 - Angular 22, **zoneless**, TypeScript 6 **strict** (+ `strictTemplates`), RxJS 7.8, Signals for state
 - UI: **Optimus UI only** (`@openng/optimus-ui`, theme `@openng/optimus-ui-themes/aura`). API-compatible with PrimeNG 21
   (`p-table`, `p-button`, `pInputText` …) — docs: https://optimus.openng.org/
-- Tailwind CSS 4 for layout/spacing (Optimus tokens exposed as `bg-surface-0`, `text-primary`, `text-muted-color`)
+- Tailwind CSS 4 for layout/spacing; colours via semantic Optimus tokens (`bg-content`, `border-content-border`,
+  `text-foreground`, `text-muted-color`, `text-primary`). Theme: `core/theme/meshtrail-preset.ts`, dark by default
 - `@microsoft/signalr` via `core/realtime/realtime.service.ts`
 - Vitest (`npm test`), Playwright (`npm run e2e`), ESLint (`npm run lint`), Prettier (`npm run format`)
 - Node **≥ 22.22.3 or ≥ 24.15**. LF line endings everywhere.

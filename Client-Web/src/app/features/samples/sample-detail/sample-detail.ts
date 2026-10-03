@@ -1,3 +1,4 @@
+import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   ChangeDetectionStrategy,
@@ -12,6 +13,7 @@ import { rxResource } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { ButtonModule } from '@openng/optimus-ui/button';
+import { ArrowLeftIcon } from '@openng/optimus-ui/icons/arrowleft';
 import { InputTextModule } from '@openng/optimus-ui/inputtext';
 import { MessageModule } from '@openng/optimus-ui/message';
 import { TextareaModule } from '@openng/optimus-ui/textarea';
@@ -25,8 +27,10 @@ import { SamplesApi } from '../samples.api';
   selector: 'app-sample-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    DatePipe,
     ReactiveFormsModule,
     RouterLink,
+    ArrowLeftIcon,
     ButtonModule,
     InputTextModule,
     MessageModule,

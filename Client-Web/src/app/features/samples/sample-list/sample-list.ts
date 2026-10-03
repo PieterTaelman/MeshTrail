@@ -4,6 +4,10 @@ import { rxResource, takeUntilDestroyed, toObservable, toSignal } from '@angular
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonModule } from '@openng/optimus-ui/button';
+import { IconFieldModule } from '@openng/optimus-ui/iconfield';
+import { PlusIcon } from '@openng/optimus-ui/icons/plus';
+import { SearchIcon } from '@openng/optimus-ui/icons/search';
+import { InputIconModule } from '@openng/optimus-ui/inputicon';
 import { InputTextModule } from '@openng/optimus-ui/inputtext';
 import { MessageModule } from '@openng/optimus-ui/message';
 import { SelectModule } from '@openng/optimus-ui/select';
@@ -23,6 +27,10 @@ import { SamplesApi } from '../samples.api';
     FormsModule,
     RouterLink,
     ButtonModule,
+    IconFieldModule,
+    InputIconModule,
+    PlusIcon,
+    SearchIcon,
     InputTextModule,
     MessageModule,
     SelectModule,
@@ -66,6 +74,9 @@ export class SampleList {
 
   protected readonly rows = computed(() => this.grid.value()?.items ?? []);
   protected readonly totalCount = computed(() => this.grid.value()?.totalCount ?? 0);
+  protected readonly pageCount = computed(() =>
+    Math.max(1, Math.ceil(this.totalCount() / this.pageSize())),
+  );
   protected readonly first = computed(() => (this.page() - 1) * this.pageSize());
   protected readonly error = computed(() =>
     this.grid.error() ? describeHttpError(this.grid.error()) : null,

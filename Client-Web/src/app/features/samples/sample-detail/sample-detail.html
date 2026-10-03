@@ -1,6 +1,24 @@
-<section class="flex max-w-2xl flex-col gap-4">
-  <a routerLink="/samples" class="text-primary underline">← Back to samples</a>
-  <h1 class="text-2xl font-semibold">{{ isNew() ? 'New sample' : 'Edit sample' }}</h1>
+<section class="mx-auto flex max-w-3xl flex-col gap-6">
+  <header class="flex flex-col gap-3">
+    <a
+      routerLink="/samples"
+      class="flex w-fit items-center gap-2 text-sm text-muted-color hover:text-foreground"
+    >
+      <svg data-p-icon="arrow-left" class="size-3.5" aria-hidden="true"></svg>
+      Back to samples
+    </a>
+    <div class="flex flex-col gap-1">
+      <span class="app-eyebrow">
+        Samples
+        @if (sample.value(); as current) {
+          / <span class="text-primary">{{ current.id.slice(0, 8) }}</span>
+        }
+      </span>
+      <h1 class="text-2xl font-semibold tracking-tight">
+        {{ isNew() ? 'New sample' : 'Edit sample' }}
+      </h1>
+    </div>
+  </header>
 
   @if (error(); as message) {
     <p-message severity="error">
@@ -13,64 +31,90 @@
     </p-message>
   }
 
-  @if (sample.isLoading()) {
-    <p>Loading…</p>
-  } @else {
-    <form class="flex flex-col gap-4" [formGroup]="form" (ngSubmit)="save()">
-      <div class="flex flex-col gap-1">
-        <label for="name" class="font-medium">Name</label>
-        <input pInputText id="name" formControlName="name" maxlength="200" />
-        @if (form.controls.name.touched && form.controls.name.invalid) {
-          <small class="text-red-600">A name is required (max 200 characters).</small>
-        }
-      </div>
+  <div class="rounded-xl border border-content-border bg-content">
+    @if (sample.isLoading()) {
+      <p class="p-6 font-mono text-sm text-muted-color">Loading…</p>
+    } @else {
+      <form [formGroup]="form" (ngSubmit)="save()">
+        <div class="flex flex-col gap-5 p-6">
+          <div class="flex flex-col gap-2">
+            <label for="name" class="app-eyebrow">Name</label>
+            <input pInputText id="name" formControlName="name" maxlength="200" />
+            @if (form.controls.name.touched && form.controls.name.invalid) {
+              <small class="text-red-500">A name is required (max 200 characters).</small>
+            }
+          </div>
 
-      <div class="flex flex-col gap-1">
-        <label for="description" class="font-medium">Description</label>
-        <textarea
-          pTextarea
-          id="description"
-          formControlName="description"
-          rows="5"
-          maxlength="2000"
-        ></textarea>
-      </div>
+          <div class="flex flex-col gap-2">
+            <label for="description" class="app-eyebrow">Description</label>
+            <textarea
+              pTextarea
+              id="description"
+              formControlName="description"
+              rows="5"
+              maxlength="2000"
+            ></textarea>
+          </div>
 
-      @if (sample.value(); as current) {
-        <p class="text-sm text-muted-color">
-          Created by {{ current.createdBy }}
-          @if (current.modifiedBy) {
-            · last changed by {{ current.modifiedBy }}
+          @if (sample.value(); as current) {
+            <dl
+              class="grid grid-cols-1 gap-4 rounded-lg border border-content-border p-4 sm:grid-cols-2"
+            >
+              <div class="flex flex-col gap-1">
+                <dt class="app-eyebrow">Created</dt>
+                <dd class="text-sm">
+                  {{ current.createdBy }}
+                  <span class="block font-mono text-xs text-muted-color">{{
+                    current.createdAt | date: 'yyyy-MM-dd HH:mm'
+                  }}</span>
+                </dd>
+              </div>
+              @if (current.modifiedBy) {
+                <div class="flex flex-col gap-1">
+                  <dt class="app-eyebrow">Last changed</dt>
+                  <dd class="text-sm">
+                    {{ current.modifiedBy }}
+                    <span class="block font-mono text-xs text-muted-color">{{
+                      current.modifiedAt | date: 'yyyy-MM-dd HH:mm'
+                    }}</span>
+                  </dd>
+                </div>
+              }
+            </dl>
           }
-        </p>
-      }
+        </div>
 
-      <div class="flex flex-wrap gap-2">
-        <p-button type="submit" label="Save" [loading]="saving()" [disabled]="conflict()" />
-        @if (!isNew()) {
-          @if (confirmDelete()) {
-            <p-button
-              label="Yes, delete"
-              severity="danger"
-              [loading]="saving()"
-              (onClick)="delete()"
-            />
-            <p-button
-              label="Cancel"
-              severity="secondary"
-              [text]="true"
-              (onClick)="confirmDelete.set(false)"
-            />
-          } @else {
-            <p-button
-              label="Delete"
-              severity="danger"
-              [outlined]="true"
-              (onClick)="confirmDelete.set(true)"
-            />
-          }
-        }
-      </div>
-    </form>
-  }
+        <div
+          class="flex flex-wrap items-center justify-between gap-2 border-t border-content-border px-6 py-4"
+        >
+          <div class="flex flex-wrap gap-2">
+            @if (!isNew()) {
+              @if (confirmDelete()) {
+                <p-button
+                  label="Yes, delete"
+                  severity="danger"
+                  [loading]="saving()"
+                  (onClick)="delete()"
+                />
+                <p-button
+                  label="Cancel"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="confirmDelete.set(false)"
+                />
+              } @else {
+                <p-button
+                  label="Delete"
+                  severity="danger"
+                  [text]="true"
+                  (onClick)="confirmDelete.set(true)"
+                />
+              }
+            }
+          </div>
+          <p-button type="submit" label="Save" [loading]="saving()" [disabled]="conflict()" />
+        </div>
+      </form>
+    }
+  </div>
 </section>

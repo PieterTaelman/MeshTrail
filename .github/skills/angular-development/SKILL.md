@@ -60,13 +60,21 @@ export class ThingCard {
 
 - Import per component from its entry point: `@openng/optimus-ui/table`, `/button`, `/select`, `/inputtext`,
   `/textarea`, `/message`, `/tag`, `/dialog`, `/toast` … (same names as PrimeNG 21).
-- Configured once in `app.config.ts` with `provideOptimus({ theme: { preset: Aura, … } })`. Don't add global CSS
+- Configured once in `app.config.ts` with `provideOptimus({ theme: { preset: MeshtrailPreset, … } })`. The preset
+  (`core/theme/meshtrail-preset.ts`) is Aura with a teal primary and graphite surfaces; change colours there. Don't add global CSS
   overrides for components; use Tailwind utilities (the CSS layer order lets them win) or the component's `pt`/`styleClass`.
 - Templates use `#header` / `#body` / `#emptymessage` template references in `p-table`.
 - Component docs and API: https://optimus.openng.org/
 
 ## Styling
 
-- Tailwind utilities in templates for layout and spacing. Colours through the Optimus tokens
-  (`bg-surface-0`, `bg-surface-50`, `text-primary`, `text-muted-color`) so theming keeps working.
+- Look and feel follows `Moodboard/`: dark by default (`ThemeService` toggles `.app-dark` on `<html>`), panels on a
+  dotted canvas, mono type for data, ids and timestamps.
+- Tailwind utilities in templates for layout and spacing. Colours through the **semantic** tokens so light and dark
+  both work: `bg-ground` (page), `bg-content` + `border-content-border` (panels), `bg-content-hover`, `bg-highlight`,
+  `text-foreground`, `text-muted-color`, `text-primary`. Avoid fixed `bg-surface-*` shades for backgrounds.
+- Panel: `rounded-xl border border-content-border bg-content`. Section/field labels and table headers: `app-eyebrow`.
+  Numbers and timestamps: `font-mono`.
+- Icons: Optimus icon components, e.g. `<svg data-p-icon="search"></svg>` with `SearchIcon` from
+  `@openng/optimus-ui/icons/search` (no PrimeIcons font).
 - Component `.css` files only when Tailwind can't express it; budget is 4 kB per component.
