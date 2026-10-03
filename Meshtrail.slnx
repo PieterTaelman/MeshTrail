@@ -28,8 +28,9 @@
   <Folder Name="/Database/">
     <File Path="Code/Database/Scripts_Core.txt" />
     <!-- Visual Studio builds this with SSDT; `dotnet build` skips it (classic SSDT format). -->
-    <Project Path="Code/Database/Meshtrail.Database/Meshtrail.Database.sqlproj" Type="00d1a9c2-b5f0-4af3-8072-f6c62b433612">
-      <Build Solution="*|*" Project="false" />
+    <Project Path="Code/Database/Meshtrail.Database/Meshtrail.Database.sqlproj" Id="6f3c2a1e-8b4d-4e7a-9c55-2d1b7e0a4f91">
+      <Build />
+      <Deploy />
     </Project>
   </Folder>
 </Solution>

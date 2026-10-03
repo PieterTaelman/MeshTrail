@@ -43,10 +43,10 @@
   </ItemGroup>
 
   <ItemGroup Label="Aspire (local development only)">
-    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.5.4" />
-    <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.5.4" />
-    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.MailPit" Version="13.5.0" />
-    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.SqlServer.Extensions" Version="13.5.0" />
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.6.0" />
+    <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.6.0" />
+    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.MailPit" Version="13.6.0" />
+    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.SqlServer.Extensions" Version="13.6.0" />
   </ItemGroup>
 
   <ItemGroup Label="Testing">

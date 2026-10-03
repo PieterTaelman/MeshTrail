@@ -25,7 +25,7 @@ for new features; it will be renamed or removed once the real domain arrives.
 | Auth | JWT bearer skeleton + `ICurrentUser`. Identity provider: not decided yet. `Development` mode fakes a user locally |
 | Tests | MSTest.Sdk 4 (Microsoft.Testing.Platform), Shouldly, Moq, `WebApplicationFactory`, Testcontainers |
 | Frontend | Angular 22, TypeScript 6 strict, Signals, Optimus UI, Tailwind 4, Vitest, Playwright — see `Client-Web/AGENTS.md` |
-| Local dev | .NET Aspire 13.5 AppHost (local only; deployment is on-prem), Docker for SQL Server + MailPit |
+| Local dev | .NET Aspire 13.6 AppHost (local only; deployment is on-prem), Docker for SQL Server + MailPit |
 | CI | GitHub Actions (`.github/workflows/ci.yml`) |
 
 ## Reference documentation
