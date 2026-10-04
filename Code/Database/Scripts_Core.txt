@@ -8,3 +8,5 @@ dbo/Tables/MeshGateways.sql
 dbo/Tables/MeshNodes.sql
 dbo/Tables/NodePositions.sql
 dbo/Tables/NodeTraceroutes.sql
+dbo/Tables/NodeRegistrations.sql
+dbo/Tables/MeshMessages.sql

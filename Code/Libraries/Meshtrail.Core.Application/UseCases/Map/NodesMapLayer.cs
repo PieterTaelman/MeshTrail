@@ -6,7 +6,11 @@ using Meshtrail.Core.Domain.Mesh;
 namespace Meshtrail.Core.Application.UseCases.Map;
 
 /// <summary>Map layer with every mesh node that has a known position.</summary>
-public sealed class NodesMapLayer(IMeshNodeRepository nodes, IMeshGatewayRepository gateways, TimeProvider timeProvider) : IMapLayerSource
+public sealed class NodesMapLayer(
+    IMeshNodeRepository nodes,
+    IMeshGatewayRepository gateways,
+    INodeRegistrationRepository registrations,
+    TimeProvider timeProvider) : IMapLayerSource
 {
     public string Layer => MapLayers.Nodes;
 
@@ -15,11 +19,12 @@ public sealed class NodesMapLayer(IMeshNodeRepository nodes, IMeshGatewayReposit
         var now = timeProvider.GetUtcNow();
         var gateway = await gateways.GetAsync(MeshGateway.PrimaryKey, cancellationToken);
         var withPosition = await nodes.GetWithPositionAsync(box, cancellationToken);
+        var registered = await registrations.GetVerifiedNodeNumsAsync([.. withPosition.Select(node => node.NodeNum)], cancellationToken);
 
-        return [.. withPosition.Select(node => ToFeature(node, now, gateway?.NodeNum))];
+        return [.. withPosition.Select(node => ToFeature(node, now, gateway?.NodeNum, registered.Contains(node.NodeNum)))];
     }
 
-    private MapFeatureDto ToFeature(MeshNode node, DateTimeOffset now, uint? gatewayNodeNum)
+    private MapFeatureDto ToFeature(MeshNode node, DateTimeOffset now, uint? gatewayNodeNum, bool isRegistered)
     {
         var position = node.LastPosition!;
         return new MapFeatureDto(
@@ -36,6 +41,7 @@ public sealed class NodesMapLayer(IMeshNodeRepository nodes, IMeshGatewayReposit
                 ["lastHeardAt"] = node.LastHeardAt,
                 ["isOnline"] = node.IsOnline(now),
                 ["isGateway"] = node.NodeNum == gatewayNodeNum,
+                ["isRegistered"] = isRegistered,
                 ["batteryLevel"] = node.BatteryLevel,
                 ["isExternalPower"] = node.IsExternalPower,
                 ["positionTime"] = position.Time,

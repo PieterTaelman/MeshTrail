@@ -8,13 +8,14 @@ namespace Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordNodeInfo;
 public sealed class RecordNodeInfoHandler(
     IMeshNodeRepository nodes,
     IMeshGatewayRepository gateways,
+    INodeRegistrationRepository registrations,
     TimeProvider timeProvider,
     IPublisher publisher) : ICommandHandler<RecordNodeInfoCommand>
 {
     public async ValueTask<Unit> Handle(RecordNodeInfoCommand command, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
-        await MeshNodeUpdates.ApplyAsync(nodes, gateways, publisher, command.NodeNum, now, async node =>
+        await MeshNodeUpdates.ApplyAsync(nodes, gateways, registrations, publisher, command.NodeNum, now, async node =>
         {
             if (command.User is { } user)
             {

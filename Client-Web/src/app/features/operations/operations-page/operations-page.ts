@@ -19,6 +19,7 @@ import { debounceTime } from 'rxjs';
 import { describeHttpError } from '../../../core/api/problem-details';
 import { MapFeatures, MapView } from '../../../core/map/map-view';
 import { RealtimeService } from '../../../core/realtime/realtime.service';
+import { ChatDrawer } from '../chat-drawer/chat-drawer';
 import { GatewayChip } from '../gateway-chip';
 import { MeshApi } from '../mesh.api';
 import { formatAge, isOnline, lastHeardColor, upsertNode } from '../mesh-format';
@@ -30,6 +31,7 @@ import {
   NodeFeatureProperties,
 } from '../mesh.models';
 import { NodeDetail } from '../node-detail/node-detail';
+import { RegistrationDialog } from '../registration-dialog/registration-dialog';
 
 /** Largest node list we load in one go (the API allows up to 500). */
 const NODE_PAGE_SIZE = 500;
@@ -49,9 +51,11 @@ const NODE_PAGE_SIZE = 500;
     MessageModule,
     RefreshIcon,
     SearchIcon,
+    ChatDrawer,
     GatewayChip,
     MapView,
     NodeDetail,
+    RegistrationDialog,
   ],
   templateUrl: './operations-page.html',
   host: { class: 'block h-full' },
@@ -59,6 +63,7 @@ const NODE_PAGE_SIZE = 500;
 export class OperationsPage {
   private readonly api = inject(MeshApi);
   private readonly map = viewChild(MapView);
+  private readonly chat = viewChild(ChatDrawer);
 
   /** Ticks every 30 s so "last heard" texts and marker colours age without reloading. */
   protected readonly now = signal(Date.now());
@@ -75,6 +80,7 @@ export class OperationsPage {
   protected readonly searchText = signal('');
   protected readonly selectedNodeNum = signal<number | null>(null);
   protected readonly actionError = signal<string | null>(null);
+  protected readonly registrationOpen = signal(false);
 
   protected readonly allNodes = computed(() => this.nodes.value()?.items ?? []);
   protected readonly onlineCount = computed(
@@ -154,6 +160,10 @@ export class OperationsPage {
     if (layer === MAP_LAYERS.nodes) {
       this.selectedNodeNum.set(Number(nodeNum));
     }
+  }
+
+  protected openConversation(nodeNum: number): void {
+    this.chat()?.openConversation(nodeNum);
   }
 
   protected reconnect(): void {

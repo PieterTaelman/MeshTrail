@@ -19,6 +19,13 @@
       }
     </div>
     <div class="flex items-center gap-4 font-mono text-xs text-muted-color">
+      <p-button
+        label="Register node"
+        size="small"
+        severity="secondary"
+        [outlined]="true"
+        (onClick)="registrationOpen.set(true)"
+      />
       <span>NODES {{ allNodes().length }}</span>
       <span class="text-green-500">ONLINE {{ onlineCount() }}</span>
     </div>
@@ -128,7 +135,14 @@
         [nodeNum]="nodeNum"
         [now]="now()"
         (closed)="selectedNodeNum.set(null)"
+        (messageNode)="openConversation($event)"
+        (registerNode)="registrationOpen.set(true)"
       />
     }
   </div>
+
+  <!-- Bottom: chat -->
+  <app-chat-drawer [nodes]="allNodes()" />
 </section>
+
+<app-registration-dialog [(visible)]="registrationOpen" />

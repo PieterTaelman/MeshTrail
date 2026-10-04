@@ -105,11 +105,75 @@ export interface NodeFeatureProperties {
   precisionBits: number;
 }
 
+export type MessageStatus = 'Queued' | 'Sent' | 'Acked' | 'Failed' | 'Received';
+
+/** A chat message. toNodeNum null = channel broadcast; peerNodeNum = the other node of a direct message. */
+export interface MeshMessage {
+  id: string;
+  direction: 'Inbound' | 'Outbound';
+  /** Verification messages never show their text (the code stays on the server). */
+  kind: 'Text' | 'Verification';
+  channelIndex: number;
+  fromNodeNum: number | null;
+  fromNodeId: string | null;
+  toNodeNum: number | null;
+  toNodeId: string | null;
+  peerNodeNum: number | null;
+  text: string;
+  status: MessageStatus;
+  failureReason: string | null;
+  snr: number | null;
+  rssi: number | null;
+  hopsAway: number | null;
+  createdAt: string;
+  createdBy: string | null;
+  sentAt: string | null;
+  ackedAt: string | null;
+}
+
+export interface MessageListRequest {
+  page: number;
+  pageSize: number;
+  channel?: number;
+  node?: number;
+}
+
+export interface SendMessageRequest {
+  channelIndex: number | null;
+  toNodeNum: number | null;
+  text: string;
+}
+
+export type RegistrationStatus = 'Claimed' | 'Verified' | 'Revoked';
+
+export interface Registration {
+  id: string;
+  nodeNum: number;
+  nodeId: string;
+  longName: string;
+  shortName: string;
+  status: RegistrationStatus;
+  userName: string;
+  claimedAt: string;
+  codeExpiresAt: string | null;
+  attemptsLeft: number;
+  verifiedAt: string | null;
+  revokedReason: string | null;
+  verificationMessageId: string | null;
+  /** Whether the direct message with the code reached the node. */
+  verificationMessageStatus: MessageStatus | null;
+}
+
+/** Max size of a message we send (MeshMessage.TextMaxBytes in C#). */
+export const MESSAGE_MAX_BYTES = 200;
+
 /** SignalR event names pushed by the API (see the Push…ToClientsHandler classes). */
 export const MESH_EVENTS = {
   nodeUpdated: 'NodeUpdated',
   gatewayStatusChanged: 'GatewayStatusChanged',
   tracerouteCompleted: 'TracerouteCompleted',
+  messageReceived: 'MessageReceived',
+  messageStatusChanged: 'MessageStatusChanged',
 } as const;
 
 /** Map layer names (MapLayers in C#). */

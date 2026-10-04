@@ -5,7 +5,11 @@ import { Observable } from 'rxjs';
 import { API_BASE_URL, API_V1 } from '../../core/api/api-config';
 import {
   GatewayStatus,
+  MeshMessage,
   MeshNode,
+  MessageListRequest,
+  Registration,
+  SendMessageRequest,
   NodeDetail,
   NodeListRequest,
   NodeTraceroute,
@@ -50,6 +54,37 @@ export class MeshApi {
 
   requestTraceroute(nodeNum: number): Observable<NodeTraceroute> {
     return this.http.post<NodeTraceroute>(`${this.url}/nodes/${nodeNum}/traceroute`, null);
+  }
+
+  getMessages(request: MessageListRequest): Observable<PagedResult<MeshMessage>> {
+    let params = new HttpParams().set('page', request.page).set('pageSize', request.pageSize);
+    if (request.channel !== undefined) {
+      params = params.set('channel', request.channel);
+    }
+    if (request.node !== undefined) {
+      params = params.set('node', request.node);
+    }
+    return this.http.get<PagedResult<MeshMessage>>(`${this.url}/messages`, { params });
+  }
+
+  sendMessage(request: SendMessageRequest): Observable<MeshMessage> {
+    return this.http.post<MeshMessage>(`${this.url}/messages`, request);
+  }
+
+  getMyRegistrations(): Observable<Registration[]> {
+    return this.http.get<Registration[]>(`${this.url}/registrations`);
+  }
+
+  registerFromContactUrl(url: string): Observable<Registration> {
+    return this.http.post<Registration>(`${this.url}/registrations/from-contact-url`, { url });
+  }
+
+  verifyRegistration(id: string, code: string): Observable<Registration> {
+    return this.http.post<Registration>(`${this.url}/registrations/${id}/verify`, { code });
+  }
+
+  revokeRegistration(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.url}/registrations/${id}`);
   }
 
   /** GeoJSON of the given map layers (all layers when empty). */

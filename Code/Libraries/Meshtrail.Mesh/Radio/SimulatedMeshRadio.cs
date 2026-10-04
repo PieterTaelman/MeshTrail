@@ -2,14 +2,20 @@ using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using Google.Protobuf;
 using Meshtastic.Protobufs;
+using Meshtrail.Mesh.Contacts;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Meshtrail.Mesh.Radio;
 
 /// <summary>
 /// A fake mesh so the whole app runs without hardware: a handful of nodes around Belgium that move, report
 /// battery, chat a little, acknowledge what we send and can raise an SOS on demand (<see cref="RaiseSos"/>).
+/// A fake node has no screen, so the simulator logs the direct messages it receives (e.g. verification codes)
+/// and each node's contact link (to try the registration flow). Development only.
 /// </summary>
-public sealed class SimulatedMeshRadio(MeshRadioOptions options, TimeProvider timeProvider) : IMeshRadio
+public sealed partial class SimulatedMeshRadio(MeshRadioOptions options, TimeProvider timeProvider, ILogger<SimulatedMeshRadio>? logger = null)
+    : IMeshRadio
 {
     /// <summary>Node number of the simulated gateway (looks like a real C6L id, but is not yours).</summary>
     public const uint GatewayNodeNum = 0x5101_aaec;
@@ -23,6 +29,7 @@ public sealed class SimulatedMeshRadio(MeshRadioOptions options, TimeProvider ti
         "Anyone near the ridge?",
     ];
 
+    private readonly ILogger _logger = logger ?? NullLogger<SimulatedMeshRadio>.Instance;
     private readonly Random _random = new();
     private readonly Lock _lock = new();
     private readonly List<SimulatedNode> _nodes =
@@ -59,7 +66,9 @@ public sealed class SimulatedMeshRadio(MeshRadioOptions options, TimeProvider ti
         {
             foreach (var node in _nodes)
             {
-                Emit(new FromRadio { NodeInfo = ToNodeInfo(node) });
+                var nodeInfo = ToNodeInfo(node);
+                Emit(new FromRadio { NodeInfo = nodeInfo });
+                LogContactLink(_logger, node.LongName, ContactUrl.Create(new SharedContact { NodeNum = node.Num, User = nodeInfo.User }));
             }
         }
 
@@ -168,6 +177,8 @@ public sealed class SimulatedMeshRadio(MeshRadioOptions options, TimeProvider ti
 
                 if (target is not null)
                 {
+                    LogDirectMessage(_logger, target.LongName, data.Payload.ToStringUtf8());
+
                     EmitLater(TimeSpan.FromSeconds(5), TextPacket(target, GatewayNodeNum, "Copy."));
                 }
 
@@ -292,6 +303,12 @@ public sealed class SimulatedMeshRadio(MeshRadioOptions options, TimeProvider ti
         HopsAway = 1,
         DeviceMetrics = Metrics(node),
     };
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Simulator: contact link of {Node}: {ContactUrl}")]
+    private static partial void LogContactLink(ILogger logger, string node, string contactUrl);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Simulator: {Node} received a direct message: {Text}")]
+    private static partial void LogDirectMessage(ILogger logger, string node, string text);
 
     private sealed class SimulatedNode(uint num, string longName, string shortName, double latitude, double longitude)
     {

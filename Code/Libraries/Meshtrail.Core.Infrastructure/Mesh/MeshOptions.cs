@@ -7,6 +7,9 @@ public sealed class MeshOutboundOptions
 
     /// <summary>Minimum pause between two packets we put on the air (EU868 duty cycle). 0 = no limit (tests only).</summary>
     public TimeSpan MinInterval { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>A sent message without a delivery report after this long is marked Failed (the firmware retries 3×).</summary>
+    public TimeSpan AckTimeout { get; set; } = TimeSpan.FromSeconds(90);
 }
 
 /// <summary>Settings from Meshtastic:Retention.</summary>

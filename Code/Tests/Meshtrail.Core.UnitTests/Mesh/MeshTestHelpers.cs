@@ -107,6 +107,33 @@ internal static class MeshTestHelpers
         return gateways;
     }
 
+    /// <summary>Registrations repository with no registrations (unless set up otherwise by the test).</summary>
+    public static Mock<INodeRegistrationRepository> Registrations(NodeRegistration? registration = null)
+    {
+        var registrations = new Mock<INodeRegistrationRepository>();
+        registrations.Setup(repo => repo.GetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(registration);
+        registrations.Setup(repo => repo.GetActiveForNodeAsync(It.IsAny<uint>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(registration is { IsActive: true } ? registration : null);
+        registrations.Setup(repo => repo.GetVerifiedNodeNumsAsync(It.IsAny<IReadOnlyCollection<uint>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HashSet<uint>());
+        return registrations;
+    }
+
+    /// <summary>A claimed registration of the hiker node by <see cref="UserName"/> with code 123456.</summary>
+    public static NodeRegistration ClaimedRegistration(string userId = UserName, DateTimeOffset? at = null) =>
+        NodeRegistration.Claim(HikerNodeNum, userId, userId, "Hiker", "HKR", GatewayPublicKey, null, "123456", at ?? Now);
+
+    public static MeshMessage QueuedMessage(uint? to = HikerNodeNum, uint packetId = 4242) =>
+        MeshMessage.QueueOutbound(0, to, "Are you OK?", MessageKind.Text, packetId, GatewayNodeNum, UserName, Now.AddSeconds(-30));
+
+    public static Mock<IMeshMessageRepository> MessagesReturning(MeshMessage? message)
+    {
+        var messages = new Mock<IMeshMessageRepository>();
+        messages.Setup(repo => repo.GetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(message);
+        messages.Setup(repo => repo.GetOutboundByPacketIdAsync(It.IsAny<uint>(), It.IsAny<CancellationToken>())).ReturnsAsync(message);
+        return messages;
+    }
+
     public static Mock<IMeshGateway> MeshGatewayPort(uint packetId = 777)
     {
         var port = new Mock<IMeshGateway>();

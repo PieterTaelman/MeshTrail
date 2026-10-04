@@ -64,5 +64,26 @@ public sealed record TracerouteReceived(
     IReadOnlyList<uint> RouteBack,
     IReadOnlyList<double?> SnrBack) : MeshEvent(ReceivedAt);
 
+/// <summary>
+/// A text message. To = our gateway (direct message) or the broadcast address (channel message).
+/// Text is exactly what the radio sent (not cleaned yet), so SOS detection can still see control characters.
+/// </summary>
+public sealed record TextReceived(
+    DateTimeOffset ReceivedAt,
+    uint From,
+    uint To,
+    int Channel,
+    string Text,
+    uint PacketId,
+    double? Snr,
+    int? Rssi,
+    int? HopsAway) : MeshEvent(ReceivedAt);
+
+/// <summary>
+/// Delivery report for one of our packets (RequestId = our packet id). Error "None" = acknowledged;
+/// From tells who acknowledged (the destination, or our own gateway for an "implicit" ack).
+/// </summary>
+public sealed record RoutingReceived(DateTimeOffset ReceivedAt, uint From, uint RequestId, string Error) : MeshEvent(ReceivedAt);
+
 /// <summary>The gateway finished sending its configuration and node database.</summary>
 public sealed record ConfigCompleted(DateTimeOffset ReceivedAt) : MeshEvent(ReceivedAt);

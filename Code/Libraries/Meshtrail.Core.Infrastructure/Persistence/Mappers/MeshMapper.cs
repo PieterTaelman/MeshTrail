@@ -140,6 +140,101 @@ internal static class MeshMapper
         row.SnrBack = string.Join(',', traceroute.SnrBack.Select(FormatSnr));
     }
 
+    // ---- NodeRegistration
+
+    public static NodeRegistration ToDomain(this DbNodeRegistration row) => NodeRegistration.Rehydrate(
+        row.Id,
+        (uint)row.NodeNum,
+        row.UserId,
+        row.UserName,
+        Enum.Parse<RegistrationStatus>(row.Status),
+        row.PublicKey,
+        row.LongName,
+        row.ShortName,
+        row.CodeHash,
+        row.CodeExpiresAt,
+        row.FailedAttempts,
+        row.VerificationMessageId,
+        row.ClaimedAt,
+        row.VerifiedAt,
+        row.RevokedAt,
+        row.RevokedReason,
+        row.RowVersion);
+
+    public static DbNodeRegistration ToDb(this NodeRegistration registration)
+    {
+        var row = new DbNodeRegistration { Id = registration.Id, RowVersion = registration.RowVersion };
+        registration.CopyTo(row);
+        return row;
+    }
+
+    public static void CopyTo(this NodeRegistration registration, DbNodeRegistration row)
+    {
+        row.NodeNum = registration.NodeNum;
+        row.UserId = registration.UserId;
+        row.UserName = registration.UserName;
+        row.Status = registration.Status.ToString();
+        row.PublicKey = registration.PublicKey;
+        row.LongName = registration.LongName;
+        row.ShortName = registration.ShortName;
+        row.CodeHash = registration.CodeHash;
+        row.CodeExpiresAt = registration.CodeExpiresAt;
+        row.FailedAttempts = registration.FailedAttempts;
+        row.VerificationMessageId = registration.VerificationMessageId;
+        row.ClaimedAt = registration.ClaimedAt;
+        row.VerifiedAt = registration.VerifiedAt;
+        row.RevokedAt = registration.RevokedAt;
+        row.RevokedReason = registration.RevokedReason;
+    }
+
+    // ---- MeshMessage
+
+    public static MeshMessage ToDomain(this DbMeshMessage row) => MeshMessage.Rehydrate(
+        row.Id,
+        Enum.Parse<MessageDirection>(row.Direction),
+        Enum.Parse<MessageKind>(row.Kind),
+        row.ChannelIndex,
+        row.FromNodeNum is { } from ? (uint)from : null,
+        row.ToNodeNum is { } to ? (uint)to : null,
+        row.Text,
+        (uint)row.PacketId,
+        Enum.Parse<MessageStatus>(row.Status),
+        row.FailureReason,
+        row.Snr,
+        row.Rssi,
+        row.HopsAway,
+        row.CreatedAt,
+        row.CreatedBy,
+        row.SentAt,
+        row.AckedAt);
+
+    public static DbMeshMessage ToDb(this MeshMessage message)
+    {
+        var row = new DbMeshMessage { Id = message.Id };
+        message.CopyTo(row);
+        return row;
+    }
+
+    public static void CopyTo(this MeshMessage message, DbMeshMessage row)
+    {
+        row.Direction = message.Direction.ToString();
+        row.Kind = message.Kind.ToString();
+        row.ChannelIndex = message.ChannelIndex;
+        row.FromNodeNum = message.FromNodeNum;
+        row.ToNodeNum = message.ToNodeNum;
+        row.Text = message.Text;
+        row.PacketId = message.PacketId;
+        row.Status = message.Status.ToString();
+        row.FailureReason = message.FailureReason;
+        row.Snr = message.Snr;
+        row.Rssi = message.Rssi;
+        row.HopsAway = message.HopsAway;
+        row.CreatedAt = message.CreatedAt;
+        row.CreatedBy = message.CreatedBy;
+        row.SentAt = message.SentAt;
+        row.AckedAt = message.AckedAt;
+    }
+
     private static string FormatSnr(double? snr) => snr?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
 
     private static List<uint> ParseRoute(string? value) =>

@@ -4,7 +4,9 @@ using Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordGatewayInfo;
 using Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordNodeHeard;
 using Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordNodeInfo;
 using Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordNodeUser;
+using Meshtrail.Core.Application.UseCases.Mesh.Commands.ReceiveTextMessage;
 using Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordPosition;
+using Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordRoutingResult;
 using Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordTelemetry;
 using Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordTracerouteResult;
 using Meshtrail.Mesh.Events;
@@ -33,6 +35,9 @@ internal static class MeshEventCommands
             telemetry.NodeNum, new RadioTelemetry(telemetry.Telemetry.BatteryLevel, telemetry.Telemetry.Voltage), telemetry.ReceivedAt),
         TracerouteReceived route => new RecordTracerouteResultCommand(
             route.NodeNum, route.RequestId, route.RouteTowards, route.SnrTowards, route.RouteBack, route.SnrBack),
+        TextReceived text => new ReceiveTextMessageCommand(
+            text.From, text.To, text.Channel, text.Text, text.PacketId, text.Snr, text.Rssi, text.HopsAway, text.ReceivedAt),
+        RoutingReceived routing => new RecordRoutingResultCommand(routing.From, routing.RequestId, routing.Error),
         // ConfigCompleted and future events without a use case: nothing to do.
         _ => null,
     };

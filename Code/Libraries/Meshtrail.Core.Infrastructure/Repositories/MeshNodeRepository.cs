@@ -82,10 +82,12 @@ internal sealed class MeshNodeRepository(MeshtrailDbContext dbContext) : IMeshNo
             null => query,
         };
 
-        // No node can be registered to a user yet, so "registered only" is always empty.
-        if (request.Registered == true)
+        if (request.Registered is { } registered)
         {
-            query = query.Where(_ => false);
+            var verified = dbContext.Set<DbNodeRegistration>()
+                .Where(registration => registration.Status == nameof(RegistrationStatus.Verified))
+                .Select(registration => registration.NodeNum);
+            query = registered ? query.Where(node => verified.Contains(node.NodeNum)) : query.Where(node => !verified.Contains(node.NodeNum));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);

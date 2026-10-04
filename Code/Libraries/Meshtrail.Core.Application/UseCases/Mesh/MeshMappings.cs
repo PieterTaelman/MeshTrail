@@ -6,7 +6,10 @@ namespace Meshtrail.Core.Application.UseCases.Mesh;
 /// <summary>Domain → contract mapping for the Mesh use cases.</summary>
 internal static class MeshMappings
 {
-    public static NodeDto ToDto(this MeshNode node, DateTimeOffset now, uint? gatewayNodeNum) => new(
+    /// <summary>Shown instead of the text of a verification message: the code must never leave the server.</summary>
+    public const string HiddenVerificationText = "Verification code";
+
+    public static NodeDto ToDto(this MeshNode node, DateTimeOffset now, uint? gatewayNodeNum, bool isRegistered) => new(
         node.NodeNum,
         node.NodeId,
         node.LongName,
@@ -26,8 +29,44 @@ internal static class MeshMappings
         node.Voltage,
         node.LastPosition?.ToDto(),
         node.NodeNum == gatewayNodeNum,
-        // Registration is not implemented yet, so no node is registered.
-        IsRegistered: false);
+        isRegistered);
+
+    public static MessageDto ToDto(this MeshMessage message) => new(
+        message.Id,
+        message.Direction.ToString(),
+        message.Kind.ToString(),
+        message.ChannelIndex,
+        message.FromNodeNum,
+        message.FromNodeNum is { } from ? MeshNode.FormatNodeId(from) : null,
+        message.ToNodeNum,
+        message.ToNodeNum is { } to ? MeshNode.FormatNodeId(to) : null,
+        message.PeerNodeNum,
+        message.Kind == MessageKind.Verification ? HiddenVerificationText : message.Text,
+        message.Status.ToString(),
+        message.FailureReason,
+        message.Snr,
+        message.Rssi,
+        message.HopsAway,
+        message.CreatedAt,
+        message.CreatedBy,
+        message.SentAt,
+        message.AckedAt);
+
+    public static RegistrationDto ToDto(this NodeRegistration registration, MessageStatus? verificationMessageStatus) => new(
+        registration.Id,
+        registration.NodeNum,
+        MeshNode.FormatNodeId(registration.NodeNum),
+        registration.LongName,
+        registration.ShortName,
+        registration.Status.ToString(),
+        registration.UserName,
+        registration.ClaimedAt,
+        registration.CodeExpiresAt,
+        registration.AttemptsLeft,
+        registration.VerifiedAt,
+        registration.RevokedReason,
+        registration.VerificationMessageId,
+        verificationMessageStatus?.ToString());
 
     public static PositionDto ToDto(this GeoPosition position) =>
         new(position.Latitude, position.Longitude, position.Altitude, position.Time, position.PrecisionBits);

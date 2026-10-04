@@ -14,6 +14,7 @@ internal static class MeshNodeUpdates
     public static async Task<MeshNode> ApplyAsync(
         IMeshNodeRepository nodes,
         IMeshGatewayRepository gateways,
+        INodeRegistrationRepository registrations,
         IPublisher publisher,
         uint nodeNum,
         DateTimeOffset now,
@@ -37,9 +38,22 @@ internal static class MeshNodeUpdates
 
         await nodes.SaveChangesAsync(cancellationToken);
 
-        var gateway = await gateways.GetAsync(MeshGateway.PrimaryKey, cancellationToken);
-        await publisher.Publish(new NodeUpdatedNotification(node.ToDto(now, gateway?.NodeNum)), cancellationToken);
+        await PublishAsync(gateways, registrations, publisher, node, now, cancellationToken);
         return node;
+    }
+
+    /// <summary>Tells the clients about the node's current state (also used when only its registration changed).</summary>
+    public static async Task PublishAsync(
+        IMeshGatewayRepository gateways,
+        INodeRegistrationRepository registrations,
+        IPublisher publisher,
+        MeshNode node,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var gateway = await gateways.GetAsync(MeshGateway.PrimaryKey, cancellationToken);
+        var registered = await registrations.GetVerifiedNodeNumsAsync([node.NodeNum], cancellationToken);
+        await publisher.Publish(new NodeUpdatedNotification(node.ToDto(now, gateway?.NodeNum, registered.Contains(node.NodeNum))), cancellationToken);
     }
 
     /// <summary>Stores a fix on the node and, when it is newer than the last one, in the position history.</summary>

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Meshtrail.Core.Application.Abstractions;
 using Meshtrail.Core.Domain.Mesh;
@@ -11,29 +12,57 @@ namespace Meshtrail.Core.Infrastructure.Mesh;
 /// </summary>
 public sealed class MeshGatewayService : IMeshGateway
 {
-    private readonly Channel<MeshOutboundRequest> _outbound = Channel.CreateBounded<MeshOutboundRequest>(
-        // Bounded so a long offline period cannot pile up thousands of stale requests; the oldest are dropped.
-        new BoundedChannelOptions(100) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
-
+    /// <summary>Text messages waiting in the queue, so a re-queue after reconnect does not send them twice.</summary>
+    private readonly ConcurrentDictionary<Guid, byte> _queuedMessages = new();
+    private readonly Channel<MeshOutboundRequest> _outbound;
     private readonly Lock _lock = new();
     private CancellationTokenSource _reconnect = new();
+
+    public MeshGatewayService()
+    {
+        // Bounded so a long offline period cannot pile up thousands of requests; the oldest are dropped.
+        // A dropped text message stays Queued in the database and is queued again on the next connect.
+        _outbound = Channel.CreateBounded<MeshOutboundRequest>(
+            new BoundedChannelOptions(100) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true },
+            dropped => Complete(dropped));
+    }
 
     /// <summary>Connection state as the worker last saw it; read by the health check without touching the database.</summary>
     public GatewayStatus Status { get; private set; } = GatewayStatus.Offline;
 
     public string? LastError { get; private set; } = "Not started yet.";
 
+    /// <summary>Our gateway's own node number, once it told us (needed to address admin messages to it).</summary>
+    public uint? GatewayNodeNum { get; internal set; }
+
     internal ChannelReader<MeshOutboundRequest> Outbound => _outbound.Reader;
 
     public uint NewPacketId() => MeshPackets.NewPacketId();
 
-    public void Enqueue(MeshOutboundRequest request) => _outbound.Writer.TryWrite(request);
+    public void Enqueue(MeshOutboundRequest request)
+    {
+        if (request is TextMessageRequest text && !_queuedMessages.TryAdd(text.MessageId, 0))
+        {
+            return;
+        }
+
+        _outbound.Writer.TryWrite(request);
+    }
 
     public void RequestReconnect()
     {
         lock (_lock)
         {
             _reconnect.Cancel();
+        }
+    }
+
+    /// <summary>The worker is done with this request (sent, failed or dropped).</summary>
+    internal void Complete(MeshOutboundRequest request)
+    {
+        if (request is TextMessageRequest text)
+        {
+            _queuedMessages.TryRemove(text.MessageId, out _);
         }
     }
 

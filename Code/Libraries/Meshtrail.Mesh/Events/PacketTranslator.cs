@@ -48,17 +48,10 @@ public sealed class PacketTranslator
 
     private List<MeshEvent> TranslatePacket(MeshPacket packet, DateTimeOffset receivedAt)
     {
-        var fromGateway = packet.From == GatewayNodeNum;
-        var events = new List<MeshEvent>
-        {
-            // Even an encrypted packet we cannot read proves the node is alive and in range.
-            new NodeHeard(
-                receivedAt,
-                packet.From,
-                fromGateway ? null : Math.Round(packet.RxSnr, 2),
-                fromGateway || !packet.HasRxRssi || packet.RxRssi == 0 ? null : packet.RxRssi,
-                HopsAway(packet)),
-        };
+        var heard = ToHeard(packet, receivedAt);
+
+        // Even an encrypted packet we cannot read proves the node is alive and in range.
+        var events = new List<MeshEvent> { heard };
 
         if (packet.Decoded is not { } data)
         {
@@ -67,7 +60,7 @@ public sealed class PacketTranslator
 
         try
         {
-            if (TranslatePayload(packet, data, receivedAt) is { } payloadEvent)
+            if (TranslatePayload(packet, data, heard) is { } payloadEvent)
             {
                 events.Add(payloadEvent);
             }
@@ -80,15 +73,31 @@ public sealed class PacketTranslator
         return events;
     }
 
-    private static MeshEvent? TranslatePayload(MeshPacket packet, Data data, DateTimeOffset receivedAt) => data.Portnum switch
+    private NodeHeard ToHeard(MeshPacket packet, DateTimeOffset receivedAt)
     {
-        PortNum.NodeinfoApp => new NodeUserReceived(receivedAt, packet.From, ToUser(User.Parser.ParseFrom(data.Payload))),
+        var fromGateway = packet.From == GatewayNodeNum;
+        return new NodeHeard(
+            receivedAt,
+            packet.From,
+            fromGateway ? null : Math.Round(packet.RxSnr, 2),
+            fromGateway || !packet.HasRxRssi || packet.RxRssi == 0 ? null : packet.RxRssi,
+            HopsAway(packet));
+    }
+
+    private static MeshEvent? TranslatePayload(MeshPacket packet, Data data, NodeHeard heard) => data.Portnum switch
+    {
+        PortNum.TextMessageApp => new TextReceived(
+            heard.ReceivedAt, packet.From, packet.To, (int)packet.Channel, data.Payload.ToStringUtf8(), packet.Id, heard.Snr, heard.Rssi, heard.HopsAway),
+        // Only reports about our own packets (request_id set) matter.
+        PortNum.RoutingApp when data.RequestId != 0 =>
+            new RoutingReceived(heard.ReceivedAt, packet.From, data.RequestId, Routing.Parser.ParseFrom(data.Payload).ErrorReason.ToString()),
+        PortNum.NodeinfoApp => new NodeUserReceived(heard.ReceivedAt, packet.From, ToUser(User.Parser.ParseFrom(data.Payload))),
         PortNum.PositionApp when ToPosition(Position.Parser.ParseFrom(data.Payload)) is { } position =>
-            new PositionReceived(receivedAt, packet.From, position),
+            new PositionReceived(heard.ReceivedAt, packet.From, position),
         PortNum.TelemetryApp when Telemetry.Parser.ParseFrom(data.Payload) is { DeviceMetrics: { } metrics } =>
-            new TelemetryReceived(receivedAt, packet.From, ToTelemetry(metrics)),
+            new TelemetryReceived(heard.ReceivedAt, packet.From, ToTelemetry(metrics)),
         // Only answers (request_id set) are results; a traceroute request passing through us is not.
-        PortNum.TracerouteApp when data.RequestId != 0 => ToTraceroute(packet, data, receivedAt),
+        PortNum.TracerouteApp when data.RequestId != 0 => ToTraceroute(packet, data, heard.ReceivedAt),
         _ => null,
     };
 

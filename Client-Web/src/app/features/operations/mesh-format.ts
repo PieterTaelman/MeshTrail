@@ -1,4 +1,4 @@
-import { MeshNode, PagedResult } from './mesh.models';
+import { MeshMessage, MeshNode, MessageStatus, PagedResult } from './mesh.models';
 
 // Small pure helpers for showing mesh data. Kept out of components so they are easy to unit test.
 
@@ -88,5 +88,56 @@ export function upsertNode(
     ? page.items.map((item) => (item.nodeNum === node.nodeNum ? node : item))
     : [...page.items, node];
   items.sort((a, b) => (b.lastHeardAt ?? '').localeCompare(a.lastHeardAt ?? ''));
+  return { ...page, items, totalCount: exists ? page.totalCount : page.totalCount + 1 };
+}
+
+/** Bytes the text takes on the radio (UTF-8): emoji and accents count 2–4. */
+export function utf8ByteCount(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
+
+/** A chat tab: one channel, or the direct-message conversation with one node. */
+export type ChatTab = { kind: 'channel'; channel: number } | { kind: 'dm'; nodeNum: number };
+
+export function chatTabKey(tab: ChatTab): string {
+  return tab.kind === 'channel' ? `ch:${tab.channel}` : `dm:${tab.nodeNum}`;
+}
+
+/** The tab a message belongs in. */
+export function tabOf(message: MeshMessage): ChatTab {
+  return message.toNodeNum === null || message.peerNodeNum === null
+    ? { kind: 'channel', channel: message.channelIndex }
+    : { kind: 'dm', nodeNum: message.peerNodeNum };
+}
+
+/** Short status mark shown next to our own messages. */
+export function statusMark(status: MessageStatus): string {
+  switch (status) {
+    case 'Queued':
+      return '…';
+    case 'Sent':
+      return '✓';
+    case 'Acked':
+      return '✓✓';
+    case 'Failed':
+      return '!';
+    default:
+      return '';
+  }
+}
+
+/** Replaces a message by id or adds it, keeping the list newest first (as the API returns it). */
+export function upsertMessage(
+  page: PagedResult<MeshMessage> | undefined,
+  message: MeshMessage,
+): PagedResult<MeshMessage> | undefined {
+  if (!page) {
+    return page;
+  }
+  const exists = page.items.some((item) => item.id === message.id);
+  const items = exists
+    ? page.items.map((item) => (item.id === message.id ? message : item))
+    : [message, ...page.items];
+  items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return { ...page, items, totalCount: exists ? page.totalCount : page.totalCount + 1 };
 }

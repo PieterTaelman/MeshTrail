@@ -25,7 +25,7 @@ public sealed class MeshHandlerTests
         // Arrange
         var nodes = NodesReturning(null);
         var publisher = Publisher();
-        var handler = new RecordNodeHeardHandler(nodes.Object, GatewaysReturning(Gateway(GatewayStatus.Online)).Object, FixedTime(), publisher.Object);
+        var handler = new RecordNodeHeardHandler(nodes.Object, GatewaysReturning(Gateway(GatewayStatus.Online)).Object, Registrations().Object, FixedTime(), publisher.Object);
 
         // Act
         await handler.Handle(new RecordNodeHeardCommand(HikerNodeNum, Now, 5.0, -80, 1), CancellationToken.None);
@@ -44,7 +44,7 @@ public sealed class MeshHandlerTests
         // Arrange
         var node = KnownNode();
         var nodes = NodesReturning(node);
-        var handler = new RecordNodeHeardHandler(nodes.Object, GatewaysReturning(null).Object, FixedTime(), Publisher().Object);
+        var handler = new RecordNodeHeardHandler(nodes.Object, GatewaysReturning(null).Object, Registrations().Object, FixedTime(), Publisher().Object);
 
         // Act
         await handler.Handle(new RecordNodeHeardCommand(HikerNodeNum, Now, null, null, null), CancellationToken.None);
@@ -59,7 +59,7 @@ public sealed class MeshHandlerTests
     {
         // Arrange
         var nodes = NodesReturning(KnownNode());
-        var handler = new RecordPositionHandler(nodes.Object, GatewaysReturning(null).Object, FixedTime(), Publisher().Object);
+        var handler = new RecordPositionHandler(nodes.Object, GatewaysReturning(null).Object, Registrations().Object, FixedTime(), Publisher().Object);
 
         // Act
         await handler.Handle(new RecordPositionCommand(HikerNodeNum, new RadioPosition(50.1, 4.2, 100, null, 32), Now), CancellationToken.None);
@@ -77,7 +77,7 @@ public sealed class MeshHandlerTests
         var node = KnownNode();
         node.RecordPosition(Fix(time: Now), Now);
         var nodes = NodesReturning(node);
-        var handler = new RecordPositionHandler(nodes.Object, GatewaysReturning(null).Object, FixedTime(), Publisher().Object);
+        var handler = new RecordPositionHandler(nodes.Object, GatewaysReturning(null).Object, Registrations().Object, FixedTime(), Publisher().Object);
 
         // Act
         await handler.Handle(new RecordPositionCommand(HikerNodeNum, new RadioPosition(51, 5, null, Now.AddHours(-1), 32), Now), CancellationToken.None);

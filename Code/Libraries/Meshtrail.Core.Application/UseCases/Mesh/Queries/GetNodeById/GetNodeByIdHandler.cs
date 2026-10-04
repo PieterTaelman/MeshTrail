@@ -9,6 +9,7 @@ public sealed class GetNodeByIdHandler(
     IMeshNodeRepository nodes,
     IMeshGatewayRepository gateways,
     INodeTracerouteRepository traceroutes,
+    INodeRegistrationRepository registrations,
     TimeProvider timeProvider) : IQueryHandler<GetNodeByIdQuery, NodeDetailDto>
 {
     public async ValueTask<NodeDetailDto> Handle(GetNodeByIdQuery query, CancellationToken cancellationToken)
@@ -19,6 +20,7 @@ public sealed class GetNodeByIdHandler(
         var now = timeProvider.GetUtcNow();
         var gateway = await gateways.GetAsync(MeshGateway.PrimaryKey, cancellationToken);
         var traceroute = await traceroutes.GetLatestForNodeAsync(query.NodeNum, cancellationToken);
-        return new NodeDetailDto(node.ToDto(now, gateway?.NodeNum), traceroute?.ToDto(now));
+        var registered = await registrations.GetVerifiedNodeNumsAsync([node.NodeNum], cancellationToken);
+        return new NodeDetailDto(node.ToDto(now, gateway?.NodeNum, registered.Contains(node.NodeNum)), traceroute?.ToDto(now));
     }
 }

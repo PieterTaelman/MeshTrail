@@ -61,10 +61,12 @@ dotnet user-secrets set "Meshtastic:Gateway:Host" "<node-ip>" --project Code/Ser
 | `Meshtastic:Gateway:Mode` | `Tcp` (`Simulated` in Development) | Real node over WiFi or the fake mesh |
 | `Meshtastic:Gateway:Host` / `Port` | — / `4403` | Address of the gateway node |
 | `Meshtastic:Outbound:MinInterval` | `00:00:10` | Minimum pause between packets we send (EU868 duty cycle) |
+| `Meshtastic:Outbound:AckTimeout` | `00:01:30` | Sent messages without a delivery report after this long become Failed |
 | `Meshtastic:Retention:PositionDays` | `30` | Position history kept this many days |
 | `Jobs:NodePositionRetention` | enabled, `15 3 * * *` | Schedule of the history clean-up |
 
-The node accepts one TCP client only: close the phone app's WiFi connection first. Details, all keys and how to set up
+The node accepts one TCP client only: close the phone app's WiFi connection first. In the simulator, the contact
+links of the fake nodes and the verification codes they receive are written to the API log. Details, all keys and how to set up
 a node: [Documentation/Mesh/README.md](Documentation/Mesh/README.md).
 
 ### Connect with SSMS / Azure Data Studio

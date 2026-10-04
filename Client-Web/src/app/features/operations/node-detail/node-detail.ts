@@ -34,6 +34,10 @@ export class NodeDetail {
   /** Current time in ms, ticking in the parent, so ages stay fresh. */
   readonly now = input.required<number>();
   readonly closed = output<void>();
+  /** The user wants to chat with this node (opens a direct-message tab). */
+  readonly messageNode = output<number>();
+  /** The user wants to register this node to themselves. */
+  readonly registerNode = output<void>();
 
   protected readonly detail = rxResource({
     params: () => this.nodeNum(),

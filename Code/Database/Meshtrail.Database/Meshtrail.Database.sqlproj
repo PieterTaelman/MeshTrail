@@ -72,6 +72,8 @@
     <Build Include="dbo\Tables\MeshNodes.sql" />
     <Build Include="dbo\Tables\NodePositions.sql" />
     <Build Include="dbo\Tables\NodeTraceroutes.sql" />
+    <Build Include="dbo\Tables\NodeRegistrations.sql" />
+    <Build Include="dbo\Tables\MeshMessages.sql" />
   </ItemGroup>
   <ItemGroup>
     <!-- Seed data is not part of the schema model; the AppHost runs it on every start. -->

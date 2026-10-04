@@ -48,4 +48,25 @@ describe('MeshApi', () => {
     expect(request.request.method).toBe('POST');
     request.flush({});
   });
+
+  it('asks for one conversation by node', () => {
+    api.getMessages({ page: 1, pageSize: 50, node: 42 }).subscribe();
+
+    const request = http.expectOne((r) => r.url === 'https://api.test/api/v1/messages');
+    expect(request.request.params.get('node')).toBe('42');
+    expect(request.request.params.has('channel')).toBe(false);
+    request.flush({ items: [], totalCount: 0, page: 1, pageSize: 50 });
+  });
+
+  it('posts the contact link and the code to the registration endpoints', () => {
+    api.registerFromContactUrl('https://meshtastic.org/v/#abc').subscribe();
+    api.verifyRegistration('r1', '123456').subscribe();
+
+    const register = http.expectOne('https://api.test/api/v1/registrations/from-contact-url');
+    expect(register.request.body).toEqual({ url: 'https://meshtastic.org/v/#abc' });
+    register.flush({});
+    const verify = http.expectOne('https://api.test/api/v1/registrations/r1/verify');
+    expect(verify.request.body).toEqual({ code: '123456' });
+    verify.flush({});
+  });
 });

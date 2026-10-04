@@ -1,7 +1,8 @@
 # Mesh — talking to the Meshtastic network
 
 Meshtrail reaches a LoRa mesh of Meshtastic devices through **one gateway node** on the local WiFi. This module
-covers everything from the bytes on the TCP socket up to the nodes on the operations map. It works with every
+covers everything from the bytes on the TCP socket up to the operations map: node discovery, registering nodes to
+users, and chat (channel and direct messages) with delivery tracking. It works with every
 Meshtastic device on stock firmware ≥ 2.5, not only Meshtrail devices. Why it is built this way:
 [decision record](../Research/2026-10-03-mesh-gateway-decisions.md).
 
@@ -16,12 +17,13 @@ Meshtastic device on stock firmware ≥ 2.5, not only Meshtrail devices. Why it 
 | Protobuf → plain events | `Meshtrail.Mesh/Events/` (`PacketTranslator`, `MeshEvent` records) |
 | Outbound packets + rate limit | `Meshtrail.Mesh/Outbound/` (`MeshPackets`, `OutboundRateLimiter`) |
 | "Share contact" link parser | `Meshtrail.Mesh/Contacts/ContactUrl.cs` |
-| Domain | `Meshtrail.Core.Domain/Mesh/` (`MeshNode`, `MeshGateway`, `NodePosition`, `NodeTraceroute`, `GeoPosition`) |
+| Domain | `Meshtrail.Core.Domain/Mesh/` (`MeshNode`, `MeshGateway`, `NodePosition`, `NodeTraceroute`, `GeoPosition`, `NodeRegistration`, `MeshMessage`) |
 | Use cases | `Meshtrail.Core.Application/UseCases/Mesh/` and `UseCases/Map/` |
 | Gateway worker, event → command mapping, health check | `Meshtrail.Core.Infrastructure/Mesh/` |
 | Repositories, EF mapping | `Meshtrail.Core.Infrastructure/Repositories/Mesh*`, `Persistence/*Mesh*`, `*Node*` |
-| Controllers | `Meshtrail.WebApi/Controllers/` (`GatewayController`, `NodesController`, `MapController`) |
-| Angular | `Client-Web/src/app/features/operations/`, map wrapper `src/app/core/map/` |
+| Controllers | `Meshtrail.WebApi/Controllers/` (`GatewayController`, `NodesController`, `MapController`, `RegistrationsController`, `MessagesController`) |
+| Contact link / code adapters | `Meshtrail.Core.Infrastructure/Mesh/` (`ContactUrlParser`, `RandomVerificationCodeGenerator`) |
+| Angular | `Client-Web/src/app/features/operations/` (page, `chat-drawer`, `registration-dialog`), map wrapper `src/app/core/map/` |
 | Console probe | `Code/Tools/Meshtrail.MeshProbe` |
 | Tests | `Code/Tests/Meshtrail.Core.UnitTests/Mesh/`, `Code/Tests/Meshtrail.Core.IntegrationTests/Mesh/` |
 
@@ -46,7 +48,56 @@ flowchart LR
 - Handlers never touch the radio: they queue work through `IMeshGateway` (Application port, implemented by
   `MeshGatewayService`). The worker sends queued requests no faster than `Meshtastic:Outbound:MinInterval`.
 - We pick packet ids ourselves (`MeshPackets.NewPacketId`), so an answer (`request_id`) can be matched to a request
-  that was stored before it was sent (traceroutes).
+  that was stored before it was sent (traceroutes, messages).
+- Local admin messages to our own gateway (`add_contact`) do not go on the air and skip the rate limit.
+
+### Sending a message
+
+```mermaid
+sequenceDiagram
+    participant UI as Chat drawer
+    participant API as SendMessage handler
+    participant DB as MeshMessages
+    participant W as Gateway worker
+    participant N as Mesh
+    UI->>API: POST messages
+    API->>DB: insert (Queued, our packet id)
+    API->>W: Enqueue(TextMessageRequest)
+    API-->>UI: 202 + MessageDto (Queued)
+    W->>W: wait for the rate limit
+    W->>N: ToRadio packet (want_ack)
+    W->>DB: MarkMessageSent: Sent
+    N-->>W: ROUTING_APP (request_id = packet id)
+    W->>DB: RecordRoutingResult: Acked or Failed
+    DB-->>UI: MessageStatusChanged (SignalR)
+```
+
+- **Acked** for a direct message only when the destination itself confirms; an "implicit" ack from a relay or our
+  own gateway only means the packet left, so it stays Sent. For a channel message any confirmation counts.
+- A routing error (`MaxRetransmit`, `NoRoute`, ...) makes it **Failed** with that reason. No report within
+  `Meshtastic:Outbound:AckTimeout` (default 90 s; checked every 15 s) makes it Failed "No delivery confirmation".
+- Messages queued while the gateway was offline stay **Queued** in the database and are queued again on every
+  (re)connect (`RequeuePendingMessages`). The in-memory queue ignores a message it already holds, so nothing goes
+  out twice.
+
+### Registering a node
+
+```mermaid
+sequenceDiagram
+    participant U as User (dialog)
+    participant API
+    participant N as Node
+    U->>API: POST registrations/from-contact-url (link from the app's "share contact" QR)
+    API->>API: parse SharedContact, Claimed registration (code hash, 15 min)
+    API->>N: direct message "Meshtrail verification code: 123456"
+    API-->>U: 201 Claimed (+ live delivery status of the code message)
+    U->>API: POST registrations/{id}/verify {code}
+    API->>API: Verified (wrong code: attempt counted, 5th wrong code revokes)
+    API->>N: (to our gateway) AdminMessage add_contact with the verified public key
+```
+
+The key is handed to the gateway only **after** verification: a forged link could otherwise make the gateway
+encrypt messages for the wrong device. A link whose key differs from the key the node itself broadcasts is refused.
 
 ### Gateway connection
 
@@ -100,6 +151,8 @@ The node accepts **one TCP client at a time**. When the phone app connects over 
 | `POSITION_APP` with a fix | `PositionReceived` | `RecordPosition` |
 | `TELEMETRY_APP` device metrics | `TelemetryReceived` | `RecordTelemetry` |
 | `TRACEROUTE_APP` with `request_id` | `TracerouteReceived` | `RecordTracerouteResult` |
+| `TEXT_MESSAGE_APP` | `TextReceived` (raw text) | `ReceiveTextMessage` (stored once per sender + packet id) |
+| `ROUTING_APP` with `request_id` | `RoutingReceived` | `RecordRoutingResult` |
 | config, channels (with keys), module config, logs | — | ignored |
 
 Packets from the gateway itself get no SNR/RSSI (they did not travel over the air). Hops away = `hop_start − hop_limit`.
@@ -141,10 +194,52 @@ classDiagram
         RouteTowards / RouteBack + SNR
         +Request() Complete() GetStatus(now)
     }
+    class NodeRegistration {
+        Guid Id
+        uint NodeNum
+        string UserId, UserName
+        RegistrationStatus Status
+        byte[] PublicKey  "from the contact link"
+        byte[]? CodeHash  "SHA-256(id:code)"
+        DateTimeOffset? CodeExpiresAt
+        int FailedAttempts
+        Guid? VerificationMessageId
+        +Claim() Verify() Revoke() IsExpired(now)
+    }
+    class MeshMessage {
+        Guid Id
+        MessageDirection Direction
+        MessageKind Kind  "Text | Verification"
+        int ChannelIndex
+        uint? FromNodeNum, ToNodeNum  "null = broadcast"
+        string Text  "max 200 bytes outbound"
+        uint PacketId
+        MessageStatus Status
+        +QueueOutbound() Received() MarkSent() MarkAcked() MarkFailed()
+    }
     MeshNode --> GeoPosition
     NodePosition --> GeoPosition
     MeshNode "1" --> "*" NodePosition : history
     MeshNode "1" --> "*" NodeTraceroute
+    MeshNode "1" --> "*" NodeRegistration
+    NodeRegistration --> MeshMessage : code message
+```
+
+```mermaid
+stateDiagram-v2
+    state "Registration" as R {
+        [*] --> Claimed: contact link
+        Claimed --> Verified: right code within 15 min
+        Claimed --> Revoked: 5th wrong code, replaced, expired claim taken over, removed
+        Verified --> Revoked: removed by the user
+    }
+    state "Outbound message" as M {
+        [*] --> Queued
+        Queued --> Sent: on the air
+        Sent --> Acked: delivery report
+        Queued --> Failed: routing error
+        Sent --> Failed: routing error or no report in time
+    }
 ```
 
 Rules worth knowing:
@@ -157,6 +252,14 @@ Rules worth knowing:
 - Battery 101 means "on external power" (`IsExternalPower`); the UI shows that instead of a percentage.
 - A traceroute without an answer after 2 minutes shows as `TimedOut` (derived, not stored).
 - Requests to the mesh need an Online gateway (`MeshGateway.EnsureCanSend` → 422 otherwise).
+- One active (Claimed or Verified) registration per node, also enforced by a filtered unique index. A new claim
+  replaces your own earlier claim or an expired claim of someone else; an active claim of someone else or any
+  verified registration blocks it (422).
+- A code is 6 digits, valid 15 minutes, max 5 attempts. Only its hash is stored; wrong attempts are saved before the
+  422 answer, so they cannot be retried endlessly.
+- Outbound text is at most 200 bytes UTF-8 (`MeshMessage.TextMaxBytes`; the validator and the client counter use the
+  same limit). Direct messages always use channel 0; the firmware encrypts them with the node's key when it knows it.
+- Inbound text is cleaned (control characters removed) and cut to 256 characters.
 
 ## Database schema
 
@@ -189,6 +292,16 @@ for the retention job.
 `RequestedBy`, `CompletedAt` NULL, `RouteTowards` / `SnrTowards` / `RouteBack` / `SnrBack` NVARCHAR(400)
 (comma-separated, empty SNR = unknown).
 
+**NodeRegistrations** — `Id` GUID PK, `NodeNum` FK, `UserId`, `UserName`, `Status`, `PublicKey` VARBINARY(32),
+`LongName`, `ShortName`, `CodeHash` VARBINARY(32) NULL, `CodeExpiresAt` NULL, `FailedAttempts`,
+`VerificationMessageId` NULL, `ClaimedAt`, `VerifiedAt` NULL, `RevokedAt` NULL, `RevokedReason` NULL, `RowVersion`.
+Unique filtered index on `NodeNum` where `Status IN ('Claimed','Verified')`; index on `UserId`.
+
+**MeshMessages** — `Id` GUID PK, `Direction`, `Kind`, `ChannelIndex`, `FromNodeNum` NULL, `ToNodeNum` NULL
+(NULL = broadcast), `Text` NVARCHAR(256), `PacketId` BIGINT, `Status`, `FailureReason` NULL, `Snr`, `Rssi`,
+`HopsAway`, `CreatedAt`, `CreatedBy` NULL, `SentAt` NULL, `AckedAt` NULL. Indexes: channel + time (broadcasts),
+from/to + time (conversations), packet id (delivery reports), status (outbound).
+
 ## API (`api/v1`)
 
 | Endpoint | Result |
@@ -200,8 +313,16 @@ for the retention job.
 | `POST nodes/{nodeNum}/position-request` | 202; the answer updates the node (NodeUpdated) |
 | `POST nodes/{nodeNum}/traceroute` | 202 + pending `NodeTracerouteDto`; result via TracerouteCompleted |
 | `GET map/features?bbox=w,s,e,n&layers=nodes` | GeoJSON FeatureCollection |
+| `GET registrations` | the current user's Claimed/Verified registrations |
+| `POST registrations/from-contact-url` `{url}` | 201 Claimed registration; the code goes out by direct message |
+| `POST registrations/{id}/verify` `{code}` | Verified registration; 422 "Wrong code. N attempts left." |
+| `DELETE registrations/{id}` | 204 |
+| `GET messages?channel=0` or `?node={nodeNum}` (`page`, `pageSize` max 200) | `PagedResult<MessageDto>`, newest first; verification messages are left out |
+| `POST messages` `{channelIndex?, toNodeNum?, text}` | 202 + Queued `MessageDto` |
 
-Errors: 400 validation (e.g. broadcast address `4294967295`), 404 unknown node, 422 gateway not online.
+Errors: 400 validation (e.g. broadcast address `4294967295`, text over 200 bytes, both `channel` and `node`),
+404 unknown node or registration (someone else's registration also answers 404), 422 business rule (gateway not
+online, wrong code, node already registered), 409 two people registering the same node at the same moment.
 
 ### Realtime (SignalR `/hubs/notifications`)
 
@@ -210,6 +331,8 @@ Errors: 400 validation (e.g. broadcast address `4294967295`), 404 unknown node, 
 | `NodeUpdated` | `NodeDto` | after any change to a node |
 | `GatewayStatusChanged` | `GatewayStatusDto` | connection state or gateway identity changed |
 | `TracerouteCompleted` | `NodeTracerouteDto` | answer to a traceroute arrived |
+| `MessageReceived` | `MessageDto` | a text arrived from the mesh |
+| `MessageStatusChanged` | `MessageDto` | one of our messages was queued, sent, acked or failed (verification messages included, text hidden) |
 
 ### Map layers
 
@@ -220,9 +343,17 @@ client's layer toggles stay the same. The mesh domain knows nothing about the ma
 
 ## Operations map (Angular)
 
-`/operations` (start page): top bar with the gateway chip (Reconnect button when offline) and node counts; left
-panel with layer toggles and the node list (search, online dot, GW badge); centre the topo map; right the node
-detail with **Request position** and **Traceroute**. Everything updates via SignalR, nothing polls.
+`/operations` (start page): top bar with the gateway chip (Reconnect button when offline), **Register node** and
+node counts; left panel with layer toggles and the node list (search, online dot, GW and REG badges); centre the
+topo map; right the node detail with **Message**, **Request position**, **Traceroute** and **Register**; bottom the
+chat drawer. Everything updates via SignalR, nothing polls.
+
+- **Chat drawer**: tab "Channel 0" plus one tab per direct-message conversation (opened from the node detail, or
+  automatically when a direct message arrives). Unread counters on closed tabs, a live byte counter (200 max; it
+  counts UTF-8 bytes, so an emoji counts 4) and status marks on our messages: `…` queued, `✓` sent, `✓✓` acked,
+  `!` failed (hover for the reason).
+- **Registration dialog**: paste the contact link, see live whether the code reached the node, type the code.
+  QR scanning comes with the mobile app.
 
 - `core/map/map-view.ts` is the **only** code that uses MapLibre, so the map library can be swapped in one place.
 - Style: `environment.mapStyleUrl`; empty = built-in OpenTopoMap raster style (needs internet; offline tiles later).
@@ -240,6 +371,14 @@ It answers what we send: routing ACKs for messages (`MAX_RETRANSMIT` for unknown
 positions for position requests, a route for traceroutes. `RaiseSos(nodeNum?)` makes a node send an SOS text.
 Development uses it by default (`appsettings.Development.json`).
 
+A fake node has no screen, so the simulator **logs** (Information level, in the API log / Aspire dashboard):
+
+- each fake node's contact link on connect (`Simulator: contact link of Sim Ghent: https://meshtastic.org/v/#...`),
+- every direct message a fake node receives, including verification codes.
+
+To try the registration flow without hardware: copy a contact link from the log, paste it in the dialog, then copy
+the code from the log. This logging exists only in the simulator.
+
 ## Configuration
 
 | Key | Default | Meaning |
@@ -251,6 +390,7 @@ Development uses it by default (`appsettings.Development.json`).
 | `Meshtastic:Gateway:ConnectTimeout` | `00:00:10` | Give up a connection attempt after this |
 | `Meshtastic:Gateway:SimulatorTickInterval` | `00:00:15` | How often the simulator invents traffic |
 | `Meshtastic:Outbound:MinInterval` | `00:00:10` | Minimum pause between two packets we send (EU868 duty cycle) |
+| `Meshtastic:Outbound:AckTimeout` | `00:01:30` | A sent message without a delivery report after this long becomes Failed |
 | `Meshtastic:Retention:PositionDays` | `30` | Position history older than this is deleted |
 | `Jobs:NodePositionRetention:Enabled` / `Cron` | `true` / `15 3 * * *` | Schedule of that clean-up |
 
@@ -280,5 +420,8 @@ With `Mode=Tcp` and no `Host`, the gateway stays Offline with "No gateway host c
 - Channel keys (PSKs) are never logged or stored: channel and config frames are ignored. The probe prints only
   channel index, role and name.
 - Public keys of nodes are public and may be stored.
+- Verification codes are stored only as a hash (salted with the registration id) and compared in constant time.
+  The text of the code message is never returned by the API or pushed to clients (shown as "Verification code").
+- Registrations are per user: verifying or removing someone else's registration answers 404.
 - Text and names arriving from the radio are untrusted input: cleaned and length-limited in the domain, and never
   rendered as HTML.

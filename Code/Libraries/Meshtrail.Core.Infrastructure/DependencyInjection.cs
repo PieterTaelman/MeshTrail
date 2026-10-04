@@ -29,6 +29,8 @@ public static class DependencyInjection
         services.AddScoped<IMeshNodeRepository, MeshNodeRepository>();
         services.AddScoped<IMeshGatewayRepository, MeshGatewayRepository>();
         services.AddScoped<INodeTracerouteRepository, NodeTracerouteRepository>();
+        services.AddScoped<INodeRegistrationRepository, NodeRegistrationRepository>();
+        services.AddScoped<IMeshMessageRepository, MeshMessageRepository>();
 
         services.AddCronJob<SampleStatisticsJob>(configuration, SampleStatisticsJob.Name);
 
@@ -50,11 +52,13 @@ public static class DependencyInjection
             var options = provider.GetRequiredService<IOptions<MeshRadioOptions>>().Value;
             var time = provider.GetRequiredService<TimeProvider>();
             return options.Mode == MeshRadioMode.Simulated
-                ? new SimulatedMeshRadio(options, time)
+                ? new SimulatedMeshRadio(options, time, provider.GetRequiredService<ILogger<SimulatedMeshRadio>>())
                 : new TcpMeshRadio(options, time, provider.GetRequiredService<ILogger<TcpMeshRadio>>());
         });
 
         services.AddSingleton<MeshGatewayService>();
+        services.AddSingleton<IContactUrlParser, ContactUrlParser>();
+        services.AddSingleton<IVerificationCodeGenerator, RandomVerificationCodeGenerator>();
         services.AddSingleton<IMeshGateway>(provider => provider.GetRequiredService<MeshGatewayService>());
         services.AddHostedService<MeshGatewayWorker>();
 
