@@ -19,6 +19,7 @@
   </Folder>
   <Folder Name="/Server/">
     <Project Path="Code/Server/Meshtrail.WebApi/Meshtrail.WebApi.csproj" />
+    <Project Path="Code/Server/Meshtrail.MqttBroker/Meshtrail.MqttBroker.csproj" />
     <Project Path="Code/Server/Meshtrail.ServiceDefaults/Meshtrail.ServiceDefaults.csproj" />
     <Project Path="Code/Server/Meshtrail.AppHost/Meshtrail.AppHost.csproj" />
   </Folder>

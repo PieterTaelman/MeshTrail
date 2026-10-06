@@ -42,6 +42,7 @@ Or press F5 on `Meshtrail.AppHost` in Visual Studio / Rider. The Aspire dashboar
 | `MeshtrailDatabase` | — | Built from the `.sqlproj`; rebuilt only when a table script changes. Seed runs every start |
 | `mailpit` | link in dashboard | Catches every outgoing mail. Dashboard command **Send test mail** |
 | `api` | https://localhost:7301/scalar | Web API + Scalar API docs, health at `/health/ready` |
+| `mqtt-broker` | `<this PC>:1883` (MQTT) | Broker for Meshtastic gateways (MQTT module of the node); health on http://localhost:5311 |
 | `client-web` | http://localhost:3000 | Angular app (`npm install` runs automatically) |
 
 Dashboard command **Rebuild database** (on `MeshtrailDatabase`) drops all local data and rebuilds from scratch.

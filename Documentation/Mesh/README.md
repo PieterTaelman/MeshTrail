@@ -17,7 +17,8 @@ Meshtastic device on stock firmware ≥ 2.5, not only Meshtrail devices. Why it 
 | Protobuf → plain events | `Meshtrail.Mesh/Events/` (`PacketTranslator`, `MeshEvent` records) |
 | Outbound packets + rate limit | `Meshtrail.Mesh/Outbound/` (`MeshPackets`, `OutboundRateLimiter`) |
 | "Share contact" link parser | `Meshtrail.Mesh/Contacts/ContactUrl.cs` |
-| MQTT broker + topics (multi-gateway spike) | `Meshtrail.Mesh/Mqtt/` (`MeshtasticMqttBroker`, `MeshtasticTopic`) |
+| MQTT broker, client + topics (multi-gateway spike) | `Meshtrail.Mesh/Mqtt/` (`MeshtasticMqttBroker`, `MeshtasticMqttClient`, `MeshtasticTopic`) |
+| MQTT broker service (AppHost resource `mqtt-broker`) | `Code/Server/Meshtrail.MqttBroker` |
 | Domain | `Meshtrail.Core.Domain/Mesh/` (`MeshNode`, `MeshGateway`, `NodePosition`, `NodeTraceroute`, `GeoPosition`, `NodeRegistration`, `MeshMessage`) |
 | Use cases | `Meshtrail.Core.Application/UseCases/Mesh/` and `UseCases/Map/` |
 | Gateway worker, event → command mapping, health check | `Meshtrail.Core.Infrastructure/Mesh/` |
@@ -365,20 +366,44 @@ chat drawer. Everything updates via SignalR, nothing polls.
 
 ## MQTT gateways (spike)
 
-The platform is moving to **many gateways over MQTT** ([decision record](../Research/2026-10-06-multi-gateway-mqtt.md)).
-Today only the spike exists; the API still uses one TCP/simulated gateway.
+The platform is moving to **many gateways over MQTT** ([decision](../Research/2026-10-06-multi-gateway-mqtt.md),
+[broker as a service](../Research/2026-10-06-mqtt-broker-service.md)). Today the broker and the probe exist; the API
+still uses one TCP/simulated gateway.
 
-- `MeshtasticMqttBroker` (embedded MQTTnet) accepts gateway connections, hands every published message to us as an
-  `MqttUplink` (parsed topic + decoded `ServiceEnvelope`) and can publish packets back down.
-- `MeshtasticTopic` parses `<root>/2/<e|json|map|stat>/...` topics; the root is configurable per node.
-- Try it with a real node:
-  ```bash
-  dotnet run --project Code/Tools/Meshtrail.MeshProbe -- --mqtt              # broker on port 1883, prints all uplinks
-  ```
-  On the node (Meshtastic app → Module config → MQTT): enabled, server address = your PC's IP (the probe prints
-  them), any username/password, **encryption off**, JSON off, TLS off (LAN only). On the primary channel: uplink and
-  downlink enabled. Allow port 1883 in the Windows firewall. In the probe:
-  `send !<nodeid> hello` (direct message from the virtual node `!4d545231`), `send all hello`, `sendjson hello`.
+```
+gateway node ──MQTT──▶ Meshtrail.MqttBroker (:1883) ◀──service account── probe today, API next phase
+```
+
+- **`Meshtrail.MqttBroker`** (AppHost resource `mqtt-broker`, port 1883, health on http://localhost:5311): a strict
+  router. Gateway uplinks go only to the service account; only the service account can send to gateways (a gateway
+  never receives another gateway's traffic); gateways may only publish Meshtastic topics and are rate-limited.
+  In Development any gateway login is accepted and every uplink is logged (visible in the Aspire dashboard).
+- **`MeshtasticMqttClient`** logs in with the service account, receives all uplinks and publishes downlinks.
+- **`MeshtasticTopic`** parses `<root>/2/<e|json|map|stat>/...`; the root is configurable per node.
+
+Configuration (`MqttBroker` section of the broker service):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Port` / `BindAddress` | `1883` / `0.0.0.0` | Where gateways connect |
+| `ServiceUserName` / `ServicePassword` | `meshtrail-api` / — | Login of the API (and probe). Password is a secret; Development uses `dev-only-service-password` |
+| `AllowAnyGateway` | `false` (`true` in Development) | Accept any gateway login until gateways get their own credentials |
+| `MaxMessagesPerSecondPerGateway` | `20` | Extra messages are dropped |
+| `LogUplinks` | `false` (`true` in Development) | One log line per uplink |
+
+Try it with a real node:
+
+1. Start the AppHost (or `dotnet run --project Code/Server/Meshtrail.MqttBroker`). Allow port 1883 in the Windows
+   firewall.
+2. On the node (Meshtastic app → Module config → MQTT): enabled, server address = your PC's IP, any
+   username/password, **encryption off**, JSON off, TLS off. Primary channel: uplink and downlink on.
+   (The node's MQTT is independent of its TCP API, so Home Assistant can stay connected over TCP.)
+3. Watch the `mqtt-broker` log in the dashboard, or run the probe for details and downlinks:
+   ```bash
+   dotnet run --project Code/Tools/Meshtrail.MeshProbe -- --mqtt     # logs in to localhost:1883 as the service
+   ```
+   Commands: `send !<nodeid> hello` (direct message from the virtual node `!4d545231`), `send all hello`,
+   `sendjson hello`.
 
 ## Simulator
 

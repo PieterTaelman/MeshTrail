@@ -7,9 +7,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 // Usage:
 //   dotnet run --project Code/Tools/Meshtrail.MeshProbe -- --host 192.168.1.20 [--port 4403]   (node over TCP)
 //   dotnet run --project Code/Tools/Meshtrail.MeshProbe -- --simulated                         (fake mesh)
-//   dotnet run --project Code/Tools/Meshtrail.MeshProbe -- --mqtt [--port 1883] [--node !4d545231] [--root msh/EU_868] [--channel LongFast]
+//   dotnet run --project Code/Tools/Meshtrail.MeshProbe -- --mqtt [--mqtt-host localhost] [--port 1883] [--password ...]
+//                                                           [--node !4d545231] [--root msh/EU_868] [--channel LongFast]
 // TCP/simulated: prints the node's own info, its node database and then every packet until Ctrl+C.
-// MQTT: runs a broker for gateways, prints what they publish and can send packets down. Channel keys are never printed.
+// MQTT: logs in to the Meshtrail MQTT broker (start it with the AppHost or Meshtrail.MqttBroker), prints what the
+// gateways publish and can send packets down. Channel keys are never printed.
 
 // Dots in coordinates regardless of the PC's regional settings.
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
@@ -20,6 +22,7 @@ int? port = null;
 var virtualNodeNum = MqttProbe.DefaultVirtualNodeNum;
 string? root = null;
 string? channel = null;
+var mqttOptions = new Meshtrail.Mesh.Mqtt.MeshtasticMqttClientOptions { Password = MqttProbe.DevelopmentServicePassword };
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -46,6 +49,15 @@ for (var i = 0; i < args.Length; i++)
         case "--channel" when i + 1 < args.Length:
             channel = args[++i];
             break;
+        case "--mqtt-host" when i + 1 < args.Length:
+            mqttOptions.Host = args[++i];
+            break;
+        case "--user" when i + 1 < args.Length:
+            mqttOptions.UserName = args[++i];
+            break;
+        case "--password" when i + 1 < args.Length:
+            mqttOptions.Password = args[++i];
+            break;
     }
 }
 
@@ -60,7 +72,8 @@ if (mqtt)
 {
     try
     {
-        return await MqttProbe.RunAsync(port ?? 1883, virtualNodeNum, root, channel, cancellation.Token);
+        mqttOptions.Port = port ?? mqttOptions.Port;
+        return await MqttProbe.RunAsync(mqttOptions, virtualNodeNum, root, channel, cancellation.Token);
     }
     catch (OperationCanceledException)
     {

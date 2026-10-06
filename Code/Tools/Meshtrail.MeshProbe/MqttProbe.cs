@@ -9,29 +9,32 @@ using Meshtastic.Protobufs;
 using Meshtrail.Mesh;
 using Meshtrail.Mesh.Mqtt;
 using Meshtrail.Mesh.Outbound;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Meshtrail.MeshProbe;
 
 /// <summary>
-/// Spike tool: runs an MQTT broker that Meshtastic gateways connect to, prints everything they publish, and can
-/// send packets back down (downlink) from a "virtual" Meshtrail node. Any login is accepted: LAN testing only.
+/// Debug tool: logs in to the Meshtrail MQTT broker (Meshtrail.MqttBroker) with the service account, prints everything
+/// the gateways publish, and can send packets back down (downlink) from a "virtual" Meshtrail node.
 /// </summary>
 internal static class MqttProbe
 {
     /// <summary>Default node number of the virtual Meshtrail node ("MTR1" in hex), used as sender of our packets.</summary>
     public const uint DefaultVirtualNodeNum = 0x4d54_5231;
 
-    public static async Task<int> RunAsync(int port, uint virtualNodeNum, string? rootOverride, string? channelOverride, CancellationToken cancellationToken)
+    /// <summary>Development password of the service account (appsettings.Development.json of the broker).</summary>
+    public const string DevelopmentServicePassword = "dev-only-service-password";
+
+    public static async Task<int> RunAsync(MeshtasticMqttClientOptions options, uint virtualNodeNum, string? rootOverride, string? channelOverride, CancellationToken cancellationToken)
     {
-        var options = new MeshtasticMqttBrokerOptions { Port = port };
-        await using var broker = new MeshtasticMqttBroker(options, (_, _, _) => true, TimeProvider.System, NullLogger.Instance);
-        await broker.StartAsync();
+        await using var broker = new MeshtasticMqttClient(options, TimeProvider.System);
+        Console.WriteLine($"Connecting to the Meshtrail MQTT broker at {broker.Description} as {options.UserName} ...");
+        await broker.ConnectAsync(cancellationToken);
 
         var virtualId = NodeIds.Format(virtualNodeNum);
-        Console.WriteLine($"MQTT broker listening on port {port}. Our virtual node: {virtualId}.");
-        Console.WriteLine($"Point the node's MQTT module at one of: {string.Join(", ", LocalAddresses())} (TLS off, any user/password).");
-        Console.WriteLine("Settings on the node: MQTT enabled, encryption OFF, JSON off; primary channel: uplink ON, downlink ON.");
+        Console.WriteLine($"Connected. Our virtual node: {virtualId}.");
+        Console.WriteLine($"Point the gateway node's MQTT module at the broker PC: {string.Join(", ", LocalAddresses())}, port {options.Port}.");
+        Console.WriteLine("Settings on the node: MQTT enabled, any user/password (dev), encryption OFF, JSON off, TLS off;");
+        Console.WriteLine("primary channel: uplink ON, downlink ON.");
         Console.WriteLine("Commands: send <!nodeid|all> <text>   sendjson <text>   quit");
         Console.WriteLine();
 
@@ -62,12 +65,12 @@ internal static class MqttProbe
             }
         }
 
-        await broker.StopAsync();
+        await broker.DisconnectAsync();
         await printing.ContinueWith(_ => { }, TaskScheduler.Default);
         return 0;
     }
 
-    private static async Task ExecuteAsync(string line, MeshtasticMqttBroker broker, ProbeState state, uint virtualNodeNum, string virtualId, CancellationToken cancellationToken)
+    private static async Task ExecuteAsync(string line, MeshtasticMqttClient broker, ProbeState state, uint virtualNodeNum, string virtualId, CancellationToken cancellationToken)
     {
         var parts = line.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries);
         switch (parts)
@@ -111,12 +114,12 @@ internal static class MqttProbe
         }
     }
 
-    private static async Task PrintUplinksAsync(MeshtasticMqttBroker broker, ProbeState state, CancellationToken cancellationToken)
+    private static async Task PrintUplinksAsync(MeshtasticMqttClient broker, ProbeState state, CancellationToken cancellationToken)
     {
         await foreach (var uplink in broker.ReadAllAsync(cancellationToken))
         {
             var time = uplink.ReceivedAt.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture);
-            var who = $"[{uplink.ClientId}{(uplink.UserName is { Length: > 0 } user ? $" user {user}" : string.Empty)}]";
+            var who = string.Empty;
 
             if (uplink.Topic is not { } topic)
             {

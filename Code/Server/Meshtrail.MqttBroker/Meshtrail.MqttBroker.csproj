@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    The MQTT broker Meshtastic gateways connect to. A separate service so it can run per region later.
+    It only routes: gateway uplinks go to the Meshtrail API, downlinks from the API go to the gateways.
+  -->
+
+  <PropertyGroup>
+    <UserSecretsId>meshtrail-mqttbroker</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Libraries\Meshtrail.Mesh\Meshtrail.Mesh.csproj" />
+    <ProjectReference Include="..\Meshtrail.ServiceDefaults\Meshtrail.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+</Project>

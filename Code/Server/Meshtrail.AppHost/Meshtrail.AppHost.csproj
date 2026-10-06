@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Meshtrail.WebApi\Meshtrail.WebApi.csproj" />
+    <ProjectReference Include="..\Meshtrail.MqttBroker\Meshtrail.MqttBroker.csproj" />
   </ItemGroup>
 
   <ItemGroup>

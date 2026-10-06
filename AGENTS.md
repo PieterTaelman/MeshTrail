@@ -53,6 +53,7 @@ Code/Libraries/Meshtrail.Core.Infrastructure  EF DbContext, Db* entities, mapper
 Code/Libraries/Meshtrail.Mesh                 Meshtastic protocol: vendored protobufs, framing, IMeshRadio (TCP +
                                               simulator), contact links — depends on nothing from Core
 Code/Server/Meshtrail.WebApi                  composition root + controllers only (Mediator source generator lives here)
+Code/Server/Meshtrail.MqttBroker              MQTT broker for Meshtastic gateways (routes gateway ⇄ API only)
 Code/Server/Meshtrail.ServiceDefaults         OpenTelemetry, health checks, resilience, service discovery
 Code/Server/Meshtrail.AppHost                 Aspire orchestrator (local development only)
 Code/Tools/Meshtrail.MeshProbe                console tool: connect to a node and print what it says

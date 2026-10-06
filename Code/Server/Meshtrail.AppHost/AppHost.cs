@@ -20,6 +20,12 @@ var mailpit = builder.AddMailPit("mailpit")
     .WithImageTag("v1.31.4")
     .WithSendTestMailCommand();
 
+// MQTT broker for Meshtastic gateways. Fixed port 1883, not proxied, so a real node on the LAN can connect to
+// <this PC's IP>:1883. Its uplink log shows in the dashboard. Health on the http profile (5311).
+builder.AddProject<Projects.Meshtrail_MqttBroker>("mqtt-broker", launchProfileName: "http")
+    .WithEndpoint(port: 1883, targetPort: 1883, scheme: "tcp", name: "mqtt", isProxied: false)
+    .WithHttpHealthCheck("/health/ready");
+
 // Ports come from the WebApi launchSettings.json "https" profile (7301 / 5301).
 var api = builder.AddProject<Projects.Meshtrail_WebApi>("api", launchProfileName: "https")
     .WithReference(database)
