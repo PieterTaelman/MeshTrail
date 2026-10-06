@@ -56,7 +56,6 @@ Code/Server/Meshtrail.WebApi                  composition root + controllers onl
 Code/Server/Meshtrail.MqttBroker              MQTT broker for Meshtastic gateways (routes gateway ⇄ API only)
 Code/Server/Meshtrail.ServiceDefaults         OpenTelemetry, health checks, resilience, service discovery
 Code/Server/Meshtrail.AppHost                 Aspire orchestrator (local development only)
-Code/Tools/Meshtrail.MeshProbe                console tool: connect to a node and print what it says
 Code/Tests/Meshtrail.Core.UnitTests           domain, handlers, validators, behaviors — no DB, no HTTP
 Code/Tests/Meshtrail.Core.IntegrationTests    API tests against a real SQL Server
 Code/Database/Meshtrail.Database              SSDT project: tables + seed scripts

@@ -26,10 +26,9 @@ Meshtastic device on stock firmware ≥ 2.5, not only Meshtrail devices. Why it 
 | Controllers | `Meshtrail.WebApi/Controllers/` (`GatewayController`, `NodesController`, `MapController`, `RegistrationsController`, `MessagesController`) |
 | Contact link / code adapters | `Meshtrail.Core.Infrastructure/Mesh/` (`ContactUrlParser`, `RandomVerificationCodeGenerator`) |
 | Angular | `Client-Web/src/app/features/operations/` (page, `chat-drawer`, `registration-dialog`), map wrapper `src/app/core/map/` |
-| Console probe | `Code/Tools/Meshtrail.MeshProbe` |
 | Tests | `Code/Tests/Meshtrail.Core.UnitTests/Mesh/`, `Code/Tests/Meshtrail.Core.IntegrationTests/Mesh/` |
 
-`Meshtrail.Mesh` references nothing from `Meshtrail.Core`, so it can be used on its own (the probe does).
+`Meshtrail.Mesh` references nothing from `Meshtrail.Core`, so it can be used on its own (the broker service does).
 Infrastructure adapts it to the application.
 
 ## Architecture
@@ -367,16 +366,17 @@ chat drawer. Everything updates via SignalR, nothing polls.
 ## MQTT gateways (spike)
 
 The platform is moving to **many gateways over MQTT** ([decision](../Research/2026-10-06-multi-gateway-mqtt.md),
-[broker as a service](../Research/2026-10-06-mqtt-broker-service.md)). Today the broker and the probe exist; the API
-still uses one TCP/simulated gateway.
+[broker as a service](../Research/2026-10-06-mqtt-broker-service.md)). Today the broker exists; the API still uses
+one TCP/simulated gateway. To look inside, use **MQTT Explorer** (or any MQTT client) with the service account.
 
 ```
-gateway node ──MQTT──▶ Meshtrail.MqttBroker (:1883) ◀──service account── probe today, API next phase
+gateway node ──MQTT──▶ Meshtrail.MqttBroker (:1883) ◀──service account── API (next phase), MQTT Explorer
 ```
 
 - **`Meshtrail.MqttBroker`** (AppHost resource `mqtt-broker`, port 1883, health on http://localhost:5311): a strict
-  router. Gateway uplinks go only to the service account; only the service account can send to gateways (a gateway
-  never receives another gateway's traffic); gateways may only publish Meshtastic topics and are rate-limited.
+  router. Everything is delivered **except gateway → gateway**: service logins see all uplinks and downlinks; gateways
+  only receive what a service login sends (a gateway never receives another gateway's traffic, or it would
+  re-transmit it over the air). Gateways may only publish Meshtastic topics and are rate-limited.
   In Development any gateway login is accepted and every uplink is logged (visible in the Aspire dashboard).
 - **`MeshtasticMqttClient`** logs in with the service account, receives all uplinks and publishes downlinks.
 - **`MeshtasticTopic`** parses `<root>/2/<e|json|map|stat>/...`; the root is configurable per node.
@@ -386,7 +386,7 @@ Configuration (`MqttBroker` section of the broker service):
 | Key | Default | Meaning |
 |---|---|---|
 | `Port` / `BindAddress` | `1883` / `0.0.0.0` | Where gateways connect |
-| `ServiceUserName` / `ServicePassword` | `meshtrail-api` / — | Login of the API (and probe). Password is a secret; Development uses `dev-only-service-password` |
+| `ServiceUserName` / `ServicePassword` | `meshtrail-api` / — | Login of the API (and of MQTT Explorer when debugging). Password is a secret; Development uses `dev-only-service-password` |
 | `AllowAnyGateway` | `false` (`true` in Development) | Accept any gateway login until gateways get their own credentials |
 | `MaxMessagesPerSecondPerGateway` | `20` | Extra messages are dropped |
 | `LogUplinks` | `false` (`true` in Development) | One log line per uplink |
@@ -398,12 +398,11 @@ Try it with a real node:
 2. On the node (Meshtastic app → Module config → MQTT): enabled, server address = your PC's IP, any
    username/password, **encryption off**, JSON off, TLS off. Primary channel: uplink and downlink on.
    (The node's MQTT is independent of its TCP API, so Home Assistant can stay connected over TCP.)
-3. Watch the `mqtt-broker` log in the dashboard, or run the probe for details and downlinks:
-   ```bash
-   dotnet run --project Code/Tools/Meshtrail.MeshProbe -- --mqtt     # logs in to localhost:1883 as the service
-   ```
-   Commands: `send !<nodeid> hello` (direct message from the virtual node `!4d545231`), `send all hello`,
-   `sendjson hello`.
+3. Watch the `mqtt-broker` log in the dashboard: one readable line per uplink
+   (`Uplink from <client>: Envelope on LongFast: !a0b1c2d3 -> all TextMessageApp`).
+4. For the raw messages use **MQTT Explorer**: host `localhost`, port `1883`, no TLS, username `meshtrail-api`,
+   password `dev-only-service-password` (Development). With any other login the broker treats you as a gateway and
+   you see nothing. Envelope payloads are binary protobuf (shown as hex); JSON and `stat` topics are readable text.
 
 ## Simulator
 
@@ -445,23 +444,17 @@ With `Mode=Tcp` and no `Host`, the gateway stays Offline with "No gateway host c
 2. In the app: *Config → Network*: enable WiFi, enter SSID and password. On ESP32 boards **WiFi switches Bluetooth
    off**, so do all other configuration first (or use USB / the web client afterwards).
 3. Find the node's IP address (router DHCP list) and give it a fixed lease.
-4. Check it with the probe (prints the node info, the node database, then every packet; never channel keys):
-   ```bash
-   dotnet run --project Code/Tools/Meshtrail.MeshProbe -- --host <node-ip>
-   dotnet run --project Code/Tools/Meshtrail.MeshProbe -- --simulated     # no hardware
-   ```
-5. Point the API at it:
+4. Point the API at it:
    ```bash
    dotnet user-secrets set "Meshtastic:Gateway:Mode" "Tcp" --project Code/Server/Meshtrail.WebApi
    dotnet user-secrets set "Meshtastic:Gateway:Host" "<node-ip>" --project Code/Server/Meshtrail.WebApi
    ```
-6. Do not connect the phone app over WiFi/TCP at the same time: the node only serves one TCP client. If it took
-   over, close it and press **Reconnect** in the top bar.
+5. Do not connect the phone app (or Home Assistant) over WiFi/TCP at the same time: the node only serves one TCP
+   client. If it took over, close it and press **Reconnect** in the top bar. MQTT does not have this limit.
 
 ## Security
 
-- Channel keys (PSKs) are never logged or stored: channel and config frames are ignored. The probe prints only
-  channel index, role and name.
+- Channel keys (PSKs) are never logged or stored: channel and config frames are ignored.
 - Public keys of nodes are public and may be stored.
 - Verification codes are stored only as a hash (salted with the registration id) and compared in constant time.
   The text of the code message is never returned by the API or pushed to clients (shown as "Verification code").

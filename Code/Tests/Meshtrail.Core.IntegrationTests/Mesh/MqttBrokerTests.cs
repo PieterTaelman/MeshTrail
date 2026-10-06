@@ -67,6 +67,24 @@ public sealed class MqttBrokerTests
     }
 
     [TestMethod]
+    public async Task ServiceDownlink_IsAlsoVisibleToAnotherServiceLogin()
+    {
+        // Arrange: e.g. MQTT Explorer logged in with the service account, next to the API.
+        var (broker, port) = await StartBrokerAsync();
+        await using var _ = broker;
+        await using var api = await ConnectServiceAsync(port);
+        await using var observer = await ConnectServiceAsync(port);
+        var packet = new MeshPacket { From = 0x4d54_5231, To = 0x0aa0_0001, Id = 8 };
+
+        // Act
+        await api.PublishPacketAsync(Root, "LongFast", "!4d545231", packet, CancellationToken.None);
+        var seen = await FirstAsync(observer.ReadAllAsync(Timeout()));
+
+        // Assert
+        seen.Envelope!.Packet.Id.ShouldBe(8u);
+    }
+
+    [TestMethod]
     public async Task WrongServicePassword_IsRefused()
     {
         // Arrange

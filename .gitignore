@@ -37,5 +37,3 @@ appsettings.*.local.json
 *.dbmdl
 *.jfm
 
-# Local launch profiles of the probe hold the node IP; never commit them.
-Code/Tools/Meshtrail.MeshProbe/Properties/launchSettings.json

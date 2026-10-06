@@ -77,9 +77,10 @@ public sealed class MeshtasticMqttBrokerOptions
 /// <summary>
 /// The broker Meshtastic gateways connect to (their MQTT module). It is a strict router, not a free-for-all broker:
 /// <list type="bullet">
-/// <item>gateways publish uplinks; only the Meshtrail API (service login) receives them;</item>
-/// <item>only the API (or this process) may send to gateways — a gateway never receives another gateway's traffic,
-/// otherwise every gateway would re-transmit everything it got from MQTT over the air;</item>
+/// <item>gateways publish uplinks; only service logins (the Meshtrail API, or a tool like MQTT Explorer logged in with
+/// the service account) receive them;</item>
+/// <item>only service logins (or this process) may send to gateways — a gateway never receives another gateway's
+/// traffic, otherwise every gateway would re-transmit everything it got from MQTT over the air;</item>
 /// <item>each gateway is rate-limited.</item>
 /// </list>
 /// </summary>
@@ -219,12 +220,14 @@ public sealed partial class MeshtasticMqttBroker : IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    /// <summary>The routing rule: gateway traffic goes only to the service; gateways only get traffic from the service.</summary>
+    /// <summary>
+    /// The routing rule: everything is delivered except gateway → gateway. So service logins see all traffic
+    /// (uplinks and downlinks, handy for MQTT Explorer), and gateways only get what a service login sends.
+    /// </summary>
     private Task InterceptEnqueueAsync(InterceptingClientApplicationMessageEnqueueEventArgs args)
     {
         var fromService = args.SenderClientId == InternalClientId || IsService(args.SenderClientId);
-        var toService = IsService(args.ReceiverClientId);
-        args.AcceptEnqueue = fromService ? !toService || args.SenderClientId == InternalClientId : toService;
+        args.AcceptEnqueue = fromService || IsService(args.ReceiverClientId);
         return Task.CompletedTask;
     }
 

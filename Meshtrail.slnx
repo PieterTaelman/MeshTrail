@@ -23,9 +23,6 @@
     <Project Path="Code/Server/Meshtrail.ServiceDefaults/Meshtrail.ServiceDefaults.csproj" />
     <Project Path="Code/Server/Meshtrail.AppHost/Meshtrail.AppHost.csproj" />
   </Folder>
-  <Folder Name="/Tools/">
-    <Project Path="Code/Tools/Meshtrail.MeshProbe/Meshtrail.MeshProbe.csproj" />
-  </Folder>
   <Folder Name="/Tests/">
     <Project Path="Code/Tests/Meshtrail.Core.UnitTests/Meshtrail.Core.UnitTests.csproj" />
     <Project Path="Code/Tests/Meshtrail.Core.IntegrationTests/Meshtrail.Core.IntegrationTests.csproj" />

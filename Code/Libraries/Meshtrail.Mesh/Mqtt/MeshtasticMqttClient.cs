@@ -26,7 +26,7 @@ public sealed class MeshtasticMqttClientOptions
 
 /// <summary>
 /// The Meshtrail side of the broker: logs in with the service account, receives every gateway uplink and publishes
-/// downlink packets. Used by the probe today and by the API's gateway transport later. Reconnecting is the caller's job.
+/// downlink packets. Used by the API's gateway transport. Reconnecting is the caller's job.
 /// </summary>
 public sealed class MeshtasticMqttClient(MeshtasticMqttClientOptions options, TimeProvider timeProvider) : IAsyncDisposable
 {
