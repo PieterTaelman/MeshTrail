@@ -12,6 +12,8 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!-- Gateways around the world connect to our MQTT broker (MIT licence). -->
+    <PackageReference Include="MQTTnet.Server" />
   </ItemGroup>
 
   <ItemGroup>

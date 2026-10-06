@@ -7,6 +7,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
+    <!-- A real MQTT client plays the gateway in the broker tests. -->
+    <PackageReference Include="MQTTnet" />
     <PackageReference Include="Shouldly" />
     <PackageReference Include="Testcontainers.MsSql" />
   </ItemGroup>

@@ -7,3 +7,4 @@ the code — read them as history. Name files `YYYY-MM-DD-short-topic.md`.
 |---|---|
 | 2026-10-03 | [Bootstrap decisions](2026-10-03-bootstrap-decisions.md) |
 | 2026-10-03 | [Mesh gateway decisions](2026-10-03-mesh-gateway-decisions.md) |
+| 2026-10-06 | [Multi-gateway platform over MQTT](2026-10-06-multi-gateway-mqtt.md) |

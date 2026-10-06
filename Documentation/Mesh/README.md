@@ -17,6 +17,7 @@ Meshtastic device on stock firmware ≥ 2.5, not only Meshtrail devices. Why it 
 | Protobuf → plain events | `Meshtrail.Mesh/Events/` (`PacketTranslator`, `MeshEvent` records) |
 | Outbound packets + rate limit | `Meshtrail.Mesh/Outbound/` (`MeshPackets`, `OutboundRateLimiter`) |
 | "Share contact" link parser | `Meshtrail.Mesh/Contacts/ContactUrl.cs` |
+| MQTT broker + topics (multi-gateway spike) | `Meshtrail.Mesh/Mqtt/` (`MeshtasticMqttBroker`, `MeshtasticTopic`) |
 | Domain | `Meshtrail.Core.Domain/Mesh/` (`MeshNode`, `MeshGateway`, `NodePosition`, `NodeTraceroute`, `GeoPosition`, `NodeRegistration`, `MeshMessage`) |
 | Use cases | `Meshtrail.Core.Application/UseCases/Mesh/` and `UseCases/Map/` |
 | Gateway worker, event → command mapping, health check | `Meshtrail.Core.Infrastructure/Mesh/` |
@@ -361,6 +362,23 @@ chat drawer. Everything updates via SignalR, nothing polls.
   `text/javascript`, otherwise the map stays empty ("Worker failed to load").
 - Marker colour by last heard: green < 15 min, yellow < 2 h, orange < 24 h, grey older/never.
 - Radio texts are always rendered with interpolation, never as HTML.
+
+## MQTT gateways (spike)
+
+The platform is moving to **many gateways over MQTT** ([decision record](../Research/2026-10-06-multi-gateway-mqtt.md)).
+Today only the spike exists; the API still uses one TCP/simulated gateway.
+
+- `MeshtasticMqttBroker` (embedded MQTTnet) accepts gateway connections, hands every published message to us as an
+  `MqttUplink` (parsed topic + decoded `ServiceEnvelope`) and can publish packets back down.
+- `MeshtasticTopic` parses `<root>/2/<e|json|map|stat>/...` topics; the root is configurable per node.
+- Try it with a real node:
+  ```bash
+  dotnet run --project Code/Tools/Meshtrail.MeshProbe -- --mqtt              # broker on port 1883, prints all uplinks
+  ```
+  On the node (Meshtastic app → Module config → MQTT): enabled, server address = your PC's IP (the probe prints
+  them), any username/password, **encryption off**, JSON off, TLS off (LAN only). On the primary channel: uplink and
+  downlink enabled. Allow port 1883 in the Windows firewall. In the probe:
+  `send !<nodeid> hello` (direct message from the virtual node `!4d545231`), `send all hello`, `sendjson hello`.
 
 ## Simulator
 

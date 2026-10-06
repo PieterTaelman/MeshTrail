@@ -31,6 +31,8 @@
   <ItemGroup Label="Mesh (Meshtastic protocol)">
     <PackageVersion Include="Google.Protobuf" Version="3.36.2" />
     <PackageVersion Include="Grpc.Tools" Version="2.84.0" />
+    <PackageVersion Include="MQTTnet" Version="5.2.0.1603" />
+    <PackageVersion Include="MQTTnet.Server" Version="5.2.0.1603" />
   </ItemGroup>
 
   <ItemGroup Label="Web API">
