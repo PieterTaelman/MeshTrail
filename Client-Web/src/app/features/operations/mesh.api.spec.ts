@@ -30,15 +30,38 @@ describe('MeshApi', () => {
     expect(request.request.params.get('search')).toBe('!f115');
     expect(request.request.params.get('online')).toBe('true');
     expect(request.request.params.has('registered')).toBe(false);
+    expect(request.request.params.has('bbox')).toBe(false);
     request.flush({ items: [], totalCount: 0, page: 1, pageSize: 500 });
   });
 
-  it('asks only for the requested map layers', () => {
-    api.getMapFeatures(['nodes']).subscribe();
+  it('sends the map view and the "my nodes" filter', () => {
+    api.getNodes({ page: 1, pageSize: 200, bbox: [2.5, 49.5, 6.4, 51.5], mine: true }).subscribe();
+
+    const request = http.expectOne((r) => r.url === 'https://api.test/api/v1/nodes');
+    expect(request.request.params.get('bbox')).toBe('2.500000,49.500000,6.400000,51.500000');
+    expect(request.request.params.get('owner')).toBe('me');
+    request.flush({ items: [], totalCount: 0, page: 1, pageSize: 200 });
+  });
+
+  it('asks only for the requested map layers in the map view', () => {
+    api.getMapFeatures(['nodes', 'gateways'], [4, 50, 5, 51]).subscribe();
 
     const request = http.expectOne((r) => r.url === 'https://api.test/api/v1/map/features');
-    expect(request.request.params.get('layers')).toBe('nodes');
+    expect(request.request.params.get('layers')).toBe('nodes,gateways');
+    expect(request.request.params.get('bbox')).toBe('4.000000,50.000000,5.000000,51.000000');
     request.flush({ type: 'FeatureCollection', features: [] });
+  });
+
+  it('adds a gateway and lists only mine', () => {
+    api.addGateway().subscribe();
+    api.getGateways(true).subscribe();
+
+    const add = http.expectOne('https://api.test/api/v1/gateways');
+    expect(add.request.method).toBe('POST');
+    add.flush({});
+    const mine = http.expectOne((r) => r.url === 'https://api.test/api/v1/gateways');
+    expect(mine.request.params.get('mine')).toBe('true');
+    mine.flush([]);
   });
 
   it('posts a traceroute request for the node', () => {
@@ -54,7 +77,6 @@ describe('MeshApi', () => {
 
     const request = http.expectOne((r) => r.url === 'https://api.test/api/v1/messages');
     expect(request.request.params.get('node')).toBe('42');
-    expect(request.request.params.has('channel')).toBe(false);
     request.flush({ items: [], totalCount: 0, page: 1, pageSize: 50 });
   });
 

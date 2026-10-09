@@ -1,5 +1,5 @@
 <section class="rounded-xl border border-content-border bg-content" aria-label="Chat">
-  <!-- Header row: toggle + tabs -->
+  <!-- Header row: toggle + conversations -->
   <div class="flex items-center gap-2 overflow-x-auto px-3 py-2">
     <button
       type="button"
@@ -7,7 +7,7 @@
       [attr.aria-expanded]="expanded()"
       (click)="expanded.set(!expanded())"
     >
-      <span class="app-eyebrow">Chat</span>
+      <span class="app-eyebrow">Messages</span>
       @if (totalUnread() > 0 && !expanded()) {
         <span class="rounded-full bg-primary px-1.5 text-[10px] text-primary-contrast">{{
           totalUnread()
@@ -27,6 +27,9 @@
             [attr.aria-selected]="isActive(tab)"
             (click)="select(tab)"
           >
+            @if (tab.kind === 'team') {
+              <span class="font-mono text-[10px] text-primary">TEAM</span>
+            }
             {{ tabLabel(tab) }}
             @if (unread()[chatTabKey(tab)]; as count) {
               <span class="rounded-full bg-primary px-1.5 text-[10px] text-primary-contrast">{{
@@ -51,76 +54,92 @@
   </div>
 
   @if (expanded()) {
-    <div class="flex h-64 flex-col border-t border-content-border">
-      <ol class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-3" aria-live="polite">
-        @for (message of visibleMessages(); track message.id) {
-          <li class="flex flex-col" [class.items-end]="message.direction === 'Outbound'">
-            <span class="font-mono text-[10px] text-muted-color">
-              {{ senderLabel(message) }} · {{ message.createdAt | date: 'HH:mm' }}
-              @if (message.direction === 'Inbound' && message.snr !== null) {
-                · {{ message.snr }} dB
-              }
-            </span>
-            <span
-              class="max-w-[80%] rounded-lg px-2.5 py-1 text-sm break-words"
-              [class.bg-highlight]="message.direction === 'Outbound'"
-              [class.bg-content-hover]="message.direction === 'Inbound'"
-            >
-              {{ message.text }}
-              @if (message.direction === 'Outbound') {
-                <span
-                  class="ml-1 font-mono text-[10px]"
-                  [class.text-red-500]="message.status === 'Failed'"
-                  [class.text-primary]="message.status === 'Acked'"
-                  [class.text-muted-color]="
-                    message.status === 'Queued' || message.status === 'Sent'
-                  "
-                  [attr.title]="statusTitle(message)"
-                  [attr.aria-label]="statusTitle(message)"
-                  >{{ statusMark(message.status) }}</span
-                >
-              }
-            </span>
-          </li>
-        } @empty {
-          <li class="text-sm text-muted-color">
-            {{ messages.isLoading() ? 'Loading…' : 'No messages yet.' }}
-          </li>
+    @if (activeTab(); as tab) {
+      <div class="flex h-64 flex-col border-t border-content-border">
+        @if (activeTeam(); as team) {
+          @if (team.gatewaysOnline === 0) {
+            <p class="border-b border-content-border px-3 py-1 text-xs text-amber-500">
+              No online gateway carries the channel "{{ team.channelName }}": messages cannot go
+              out. Add the channel to a gateway (uplink and downlink on).
+            </p>
+          }
         }
-      </ol>
+        <ol class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-3" aria-live="polite">
+          @for (message of visibleMessages(); track message.id) {
+            <li class="flex flex-col" [class.items-end]="message.direction === 'Outbound'">
+              <span class="font-mono text-[10px] text-muted-color">
+                {{ senderLabel(message) }} · {{ message.createdAt | date: 'HH:mm' }}
+                @if (message.direction === 'Inbound' && message.snr !== null) {
+                  · {{ message.snr }} dB
+                }
+              </span>
+              <span
+                class="max-w-[80%] rounded-lg px-2.5 py-1 text-sm break-words"
+                [class.bg-highlight]="message.direction === 'Outbound'"
+                [class.bg-content-hover]="message.direction === 'Inbound'"
+              >
+                {{ message.text }}
+                @if (message.direction === 'Outbound') {
+                  <span
+                    class="ml-1 font-mono text-[10px]"
+                    [class.text-red-500]="message.status === 'Failed'"
+                    [class.text-primary]="message.status === 'Acked'"
+                    [class.text-muted-color]="
+                      message.status === 'Queued' || message.status === 'Sent'
+                    "
+                    [attr.title]="statusTitle(message)"
+                    [attr.aria-label]="statusTitle(message)"
+                    >{{ statusMark(message.status) }}</span
+                  >
+                }
+              </span>
+            </li>
+          } @empty {
+            <li class="text-sm text-muted-color">
+              {{ messages.isLoading() ? 'Loading…' : 'No messages yet.' }}
+            </li>
+          }
+        </ol>
 
-      @if (error(); as message) {
-        <p-message class="px-3" severity="error" [text]="message" />
-      }
+        @if (error(); as message) {
+          <p-message class="px-3" severity="error" [text]="message" />
+        }
 
-      <form
-        class="flex items-center gap-2 border-t border-content-border p-2"
-        (submit)="$event.preventDefault(); send()"
-      >
-        <input
-          pInputText
-          class="min-w-0 flex-1"
-          [placeholder]="'Message ' + tabLabel(activeTab())"
-          [attr.aria-label]="'Message ' + tabLabel(activeTab())"
-          [value]="draft()"
-          (input)="draft.set($any($event.target).value)"
-          (keydown)="onKeydown($event)"
-        />
-        <span
-          class="w-16 text-right font-mono text-xs"
-          [class.text-red-500]="tooLong()"
-          [class.text-muted-color]="!tooLong()"
-          aria-live="polite"
-          [attr.aria-label]="draftBytes() + ' of ' + maxBytes + ' bytes'"
-          >{{ draftBytes() }}/{{ maxBytes }}</span
+        <form
+          class="flex items-center gap-2 border-t border-content-border p-2"
+          (submit)="$event.preventDefault(); send()"
         >
-        <p-button
-          type="submit"
-          label="Send"
-          size="small"
-          [disabled]="!draft().trim() || tooLong() || sending()"
-        />
-      </form>
-    </div>
+          <input
+            #draftInput
+            pInputText
+            class="min-w-0 flex-1"
+            [placeholder]="'Message ' + tabLabel(tab)"
+            [attr.aria-label]="'Message ' + tabLabel(tab)"
+            [value]="draft()"
+            (input)="draft.set($any($event.target).value)"
+            (keydown)="onKeydown($event)"
+          />
+          <span
+            class="w-16 text-right font-mono text-xs"
+            [class.text-red-500]="tooLong()"
+            [class.text-muted-color]="!tooLong()"
+            aria-live="polite"
+            [attr.aria-label]="draftBytes() + ' of ' + maxBytes + ' bytes'"
+            >{{ draftBytes() }}/{{ maxBytes }}</span
+          >
+          <p-button
+            type="submit"
+            label="Send"
+            size="small"
+            [disabled]="!draft().trim() || tooLong() || sending()"
+          />
+        </form>
+      </div>
+    } @else {
+      <p class="border-t border-content-border p-3 text-sm text-muted-color">
+        Open a node and press Message to start a conversation, or create or join a team under Teams.
+        Messages go through the gateways that can reach the node or carry the team's channel.
+      </p>
+    }
   }
 </section>

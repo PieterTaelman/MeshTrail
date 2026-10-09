@@ -1,50 +1,45 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-import { GatewayStatus } from './mesh.models';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { gatewaySummaryState } from './mesh-format';
+import { GatewaySummary } from './mesh.models';
 
-/** Coloured chip with the gateway connection state; the last error shows as tooltip text when offline. */
+/**
+ * Top-bar chip "GATEWAYS online/total": green when all are online, amber when some are offline, red when none is.
+ * Clicking it opens "My gateways".
+ */
 @Component({
   selector: 'app-gateway-chip',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'inline-flex' },
   template: `
-    <span
-      class="inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-xs"
-      [class.border-green-500]="state() === 'Online'"
-      [class.text-green-500]="state() === 'Online'"
-      [class.border-amber-500]="state() === 'Connecting'"
-      [class.text-amber-500]="state() === 'Connecting'"
-      [class.border-red-500]="state() === 'Offline'"
-      [class.text-red-500]="state() === 'Offline'"
+    <button
+      type="button"
+      class="inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-xs hover:bg-content-hover"
+      [class.border-green-500]="state() === 'ok'"
+      [class.text-green-500]="state() === 'ok'"
+      [class.border-amber-500]="state() === 'partial'"
+      [class.text-amber-500]="state() === 'partial'"
+      [class.border-red-500]="state() === 'down'"
+      [class.text-red-500]="state() === 'down'"
+      [class.border-content-border]="state() === 'none'"
+      [class.text-muted-color]="state() === 'none'"
       [attr.title]="tooltip()"
-      role="status"
-      [attr.aria-label]="'Gateway ' + label()"
+      [attr.aria-label]="tooltip() + '. Open my gateways'"
+      (click)="opened.emit()"
     >
-      <span
-        class="size-2 rounded-full bg-current"
-        [class.animate-pulse]="state() === 'Connecting'"
-        aria-hidden="true"
-      ></span>
-      GATEWAY {{ label() }}
-      @if (gateway()?.nodeId; as nodeId) {
-        <span class="text-muted-color">{{ nodeId }}</span>
-      }
-      @if (gateway()?.mode === 'Simulated') {
-        <span class="text-muted-color">SIM</span>
-      }
-    </span>
+      <span class="size-2 rounded-full bg-current" aria-hidden="true"></span>
+      GATEWAYS {{ summary()?.online ?? 0 }}/{{ summary()?.total ?? 0 }}
+    </button>
   `,
 })
 export class GatewayChip {
-  readonly gateway = input<GatewayStatus | undefined>();
+  readonly summary = input<GatewaySummary | undefined>();
+  readonly opened = output<void>();
 
-  protected readonly state = computed(() => this.gateway()?.status ?? 'Offline');
-  protected readonly label = computed(() => this.state().toUpperCase());
+  protected readonly state = computed(() => gatewaySummaryState(this.summary()));
   protected readonly tooltip = computed(() => {
-    const gateway = this.gateway();
-    if (!gateway) {
-      return 'Gateway status unknown';
-    }
-    const firmware = gateway.firmwareVersion ? `Firmware ${gateway.firmwareVersion}. ` : '';
-    return gateway.lastError ? `${firmware}${gateway.lastError}` : firmware || gateway.status;
+    const summary = this.summary();
+    return !summary || summary.total === 0
+      ? 'No gateways yet'
+      : `${summary.online} of ${summary.total} gateways online`;
   });
 }

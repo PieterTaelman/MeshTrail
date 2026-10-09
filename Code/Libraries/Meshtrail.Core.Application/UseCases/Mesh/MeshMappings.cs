@@ -9,7 +9,7 @@ internal static class MeshMappings
     /// <summary>Shown instead of the text of a verification message: the code must never leave the server.</summary>
     public const string HiddenVerificationText = "Verification code";
 
-    public static NodeDto ToDto(this MeshNode node, DateTimeOffset now, uint? gatewayNodeNum, bool isRegistered) => new(
+    public static NodeDto ToDto(this MeshNode node, DateTimeOffset now, bool isGateway, bool isRegistered) => new(
         node.NodeNum,
         node.NodeId,
         node.LongName,
@@ -28,7 +28,7 @@ internal static class MeshMappings
         node.IsExternalPower,
         node.Voltage,
         node.LastPosition?.ToDto(),
-        node.NodeNum == gatewayNodeNum,
+        isGateway,
         isRegistered);
 
     public static MessageDto ToDto(this MeshMessage message) => new(
@@ -36,6 +36,8 @@ internal static class MeshMappings
         message.Direction.ToString(),
         message.Kind.ToString(),
         message.ChannelIndex,
+        message.ChannelName,
+        message.GatewayNodeNum,
         message.FromNodeNum,
         message.FromNodeNum is { } from ? MeshNode.FormatNodeId(from) : null,
         message.ToNodeNum,
@@ -50,7 +52,8 @@ internal static class MeshMappings
         message.CreatedAt,
         message.CreatedBy,
         message.SentAt,
-        message.AckedAt);
+        message.AckedAt,
+        message.TeamId);
 
     public static RegistrationDto ToDto(this NodeRegistration registration, MessageStatus? verificationMessageStatus) => new(
         registration.Id,
@@ -70,16 +73,6 @@ internal static class MeshMappings
 
     public static PositionDto ToDto(this GeoPosition position) =>
         new(position.Latitude, position.Longitude, position.Altitude, position.Time, position.PrecisionBits);
-
-    public static GatewayStatusDto ToDto(this MeshGateway gateway) => new(
-        gateway.Status.ToString(),
-        gateway.Mode,
-        gateway.StatusChangedAt,
-        gateway.LastConnectedAt,
-        gateway.LastError,
-        gateway.NodeNum,
-        gateway.NodeNum is { } nodeNum ? MeshNode.FormatNodeId(nodeNum) : null,
-        gateway.FirmwareVersion);
 
     public static NodeTracerouteDto ToDto(this NodeTraceroute traceroute, DateTimeOffset now) => new(
         traceroute.Id,

@@ -7,8 +7,7 @@ namespace Meshtrail.Core.Application.UseCases.Mesh.Commands.RevokeRegistration;
 
 public sealed class RevokeRegistrationHandler(
     INodeRegistrationRepository registrations,
-    IMeshNodeRepository nodes,
-    IMeshGatewayRepository gateways,
+    MeshNodeStores stores,
     ICurrentUser currentUser,
     TimeProvider timeProvider,
     IPublisher publisher) : ICommandHandler<RevokeRegistrationCommand>
@@ -26,9 +25,9 @@ public sealed class RevokeRegistrationHandler(
         await registrations.UpdateAsync(registration, cancellationToken);
         await registrations.SaveChangesAsync(cancellationToken);
 
-        if (await nodes.GetAsync(registration.NodeNum, cancellationToken) is { } node)
+        if (await stores.Nodes.GetAsync(registration.NodeNum, cancellationToken) is { } node)
         {
-            await MeshNodeUpdates.PublishAsync(gateways, registrations, publisher, node, now, cancellationToken);
+            await MeshNodeUpdates.PublishAsync(stores, publisher, node, now, cancellationToken);
         }
 
         return Unit.Value;

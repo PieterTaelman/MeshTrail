@@ -1,20 +1,25 @@
+using Mediator;
 using Meshtastic.Protobufs;
 using Meshtrail.Core.Application.Abstractions;
-using Meshtrail.Core.Application.UseCases.Mesh.Commands.ReceiveTextMessage;
-using Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordRoutingResult;
+using Meshtrail.Core.Application.UseCases.Mesh.Commands.MarkMessageSent;
 using Meshtrail.Core.Application.UseCases.Mesh.Commands.SendMessage;
 using Meshtrail.Core.Application.UseCases.Mesh.Commands.VerifyRegistration;
 using Meshtrail.Core.Application.UseCases.Mesh.Queries.GetMessages;
 using Meshtrail.Core.Contracts.Mesh;
+using Meshtrail.Core.Domain.Mesh;
 using Meshtrail.Core.Infrastructure.Mesh;
 using Meshtrail.Mesh.Events;
 using Meshtrail.Mesh.Outbound;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Moq;
 using Shouldly;
 using static Meshtrail.Core.UnitTests.Mesh.MeshTestHelpers;
 
 namespace Meshtrail.Core.UnitTests.Mesh;
 
-/// <summary>Messaging pieces outside the handlers: translation, queue de-duplication, packets, validators.</summary>
+/// <summary>Messaging pieces outside the handlers: translation, the outbox, packets, validators.</summary>
 [TestClass]
 public sealed class MessagingPlumbingTests
 {
@@ -38,7 +43,7 @@ public sealed class MessagingPlumbingTests
     }
 
     [TestMethod]
-    public void Translate_RoutingReport_ReturnsErrorName()
+    public void Translate_RoutingReport_ReturnsErrorNameAndAddressee()
     {
         // Arrange
         var translator = new PacketTranslator();
@@ -47,59 +52,70 @@ public sealed class MessagingPlumbingTests
         var events = translator.Translate(Packet(HikerNodeNum, PortNum.RoutingApp, new Routing { ErrorReason = Routing.Types.Error.MaxRetransmit }, 77), Now);
 
         // Assert
-        events[1].ShouldBe(new RoutingReceived(Now, HikerNodeNum, 77, "MaxRetransmit"));
+        events[1].ShouldBe(new RoutingReceived(Now, HikerNodeNum, GatewayNodeNum, 77, "MaxRetransmit"));
     }
 
     [TestMethod]
-    public void ToCommand_TextAndRouting_MapToCommands()
-    {
-        // Act
-        var text = MeshEventCommands.ToCommand(new TextReceived(Now, HikerNodeNum, uint.MaxValue, 0, "hi", 5, 1.0, -90, 1));
-        var routing = MeshEventCommands.ToCommand(new RoutingReceived(Now, HikerNodeNum, 5, "None"));
-
-        // Assert
-        text.ShouldBe(new ReceiveTextMessageCommand(HikerNodeNum, uint.MaxValue, 0, "hi", 5, 1.0, -90, 1, Now));
-        routing.ShouldBe(new RecordRoutingResultCommand(HikerNodeNum, 5, "None"));
-    }
-
-    [TestMethod]
-    public async Task GatewayService_SameMessageTwice_IsQueuedOnce()
+    public async Task Outbox_SameMessageTwice_IsSentOnce()
     {
         // Arrange
-        var service = new MeshGatewayService();
-        var request = new TextMessageRequest(HikerNodeNum, 1, Guid.NewGuid(), 0, "hi");
+        var transport = new RecordingTransport(GatewayTransport.Mqtt, "local");
+        using var outbox = Outbox(transport);
+        var request = new TextMessageRequest(Route(), HikerNodeNum, 1, Guid.NewGuid(), 0, "hi");
 
         // Act
-        service.Enqueue(request);
-        service.Enqueue(request);
+        outbox.Enqueue(request);
+        outbox.Enqueue(request);
+        await transport.WaitForAsync(1);
+        await Task.Delay(100);
 
         // Assert
-        (await service.Outbound.ReadAsync()).ShouldBe(request);
-        service.Outbound.TryRead(out _).ShouldBeFalse();
+        transport.Sent.Count.ShouldBe(1);
     }
 
     [TestMethod]
-    public async Task GatewayService_AfterComplete_MessageCanBeQueuedAgain()
+    public async Task Outbox_MqttGateway_SendsFromTheVirtualNodeAndMarksSent()
     {
         // Arrange
-        var service = new MeshGatewayService();
-        var request = new TextMessageRequest(HikerNodeNum, 1, Guid.NewGuid(), 0, "hi");
-        service.Enqueue(request);
-        service.Complete(await service.Outbound.ReadAsync());
+        var transport = new RecordingTransport(GatewayTransport.Mqtt, "local");
+        var sender = new Mock<ISender>();
+        using var outbox = Outbox(transport, sender);
+        var messageId = Guid.NewGuid();
 
         // Act
-        service.Enqueue(request);
+        outbox.Enqueue(new TextMessageRequest(Route(), HikerNodeNum, 42, messageId, 0, "hi"));
+        var (via, packet) = (await transport.WaitForAsync(1))[0];
+        await Task.Delay(100);
 
         // Assert
-        service.Outbound.TryRead(out var again).ShouldBeTrue();
-        again.ShouldBe(request);
+        via.GatewayNodeNum.ShouldBe(GatewayNodeNum);
+        packet.From.ShouldBe(VirtualNodeNum);
+        packet.To.ShouldBe(HikerNodeNum);
+        packet.Id.ShouldBe(42u);
+        sender.Verify(s => s.Send(new MarkMessageSentCommand(messageId), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [TestMethod]
+    public async Task Outbox_TcpGateway_LeavesTheSenderToTheNode()
+    {
+        // Arrange
+        var transport = new RecordingTransport(GatewayTransport.Tcp, null);
+        using var outbox = Outbox(transport);
+
+        // Act
+        outbox.Enqueue(new PositionRequest(Route() with { Transport = GatewayTransport.Tcp }, HikerNodeNum, 7));
+        var (_, packet) = (await transport.WaitForAsync(1))[0];
+
+        // Assert
+        packet.From.ShouldBe(0u);
+        packet.Decoded.WantResponse.ShouldBeTrue();
     }
 
     [TestMethod]
     public void TextPacket_AsksForDeliveryReport()
     {
         // Act
-        var packet = MeshPackets.Text(HikerNodeNum, 2, "hi", 42).Packet;
+        var packet = MeshPackets.Text(HikerNodeNum, 2, "hi", 42);
 
         // Assert
         packet.WantAck.ShouldBeTrue();
@@ -108,10 +124,10 @@ public sealed class MessagingPlumbingTests
     }
 
     [TestMethod]
-    public void AddContactPacket_GoesToOurGatewayWithTheKey()
+    public void AddContactPacket_GoesToTheGatewayWithTheKey()
     {
         // Act
-        var packet = MeshPackets.AddContact(GatewayNodeNum, HikerNodeNum, "Hiker", "HKR", GatewayPublicKey, 42).Packet;
+        var packet = MeshPackets.AddContact(GatewayNodeNum, HikerNodeNum, "Hiker", "HKR", GatewayPublicKey, 42);
 
         // Assert
         packet.To.ShouldBe(GatewayNodeNum);
@@ -125,21 +141,43 @@ public sealed class MessagingPlumbingTests
     public void SendMessageValidator_BytesNotCharacters_AreCounted()
     {
         // Act
-        var result = new SendMessageValidator().Validate(new SendMessageCommand(0, null, new string('€', 67)));
+        var result = new SendMessageValidator().Validate(new SendMessageCommand(HikerNodeNum, null, new string('€', 67)));
 
         // Assert
         result.Errors.ShouldContain(error => error.PropertyName == "Text");
     }
 
     [TestMethod]
-    [DataRow(0, null, true)]
-    [DataRow(null, 12345u, true)]
-    [DataRow(null, null, false)]
-    [DataRow(0, 12345u, false)]
-    public void GetMessagesValidator_ExactlyOneOfChannelOrNode(int? channel, uint? node, bool valid)
+    public void SendMessageValidator_Broadcast_IsInvalid()
     {
         // Act
-        var result = new GetMessagesValidator().Validate(new GetMessagesQuery(new MessageListRequest { Channel = channel, Node = node }));
+        var result = new SendMessageValidator().Validate(new SendMessageCommand(uint.MaxValue, null, "hi"));
+
+        // Assert
+        result.Errors.ShouldContain(error => error.PropertyName == "ToNodeNum");
+    }
+
+    [TestMethod]
+    public void SendMessageValidator_BothNodeAndTeam_IsInvalid()
+    {
+        // Act
+        var result = new SendMessageValidator().Validate(new SendMessageCommand(HikerNodeNum, Guid.NewGuid(), "hi"));
+
+        // Assert
+        result.Errors.ShouldContain(error => error.PropertyName == "ToNodeNum");
+    }
+
+    [TestMethod]
+    [DataRow(12345u, false, true)]
+    [DataRow(null, true, true)]
+    [DataRow(null, false, false)]
+    [DataRow(12345u, true, false)]
+    [DataRow(0u, false, false)]
+    public void GetMessagesValidator_ExactlyOneOfNodeOrTeam(uint? node, bool team, bool valid)
+    {
+        // Act
+        var result = new GetMessagesValidator().Validate(
+            new GetMessagesQuery(new MessageListRequest { Node = node, Team = team ? Guid.NewGuid() : null }));
 
         // Assert
         result.IsValid.ShouldBe(valid);
@@ -157,5 +195,16 @@ public sealed class MessagingPlumbingTests
 
         // Assert
         result.IsValid.ShouldBe(valid);
+    }
+
+    private static MeshOutbox Outbox(IGatewayTransport transport, Mock<ISender>? sender = null)
+    {
+        var services = new ServiceCollection().AddSingleton((sender ?? new Mock<ISender>()).Object).BuildServiceProvider();
+        return new MeshOutbox(
+            [transport],
+            services.GetRequiredService<IServiceScopeFactory>(),
+            Options.Create(new MeshOutboundOptions { MinInterval = TimeSpan.Zero, VirtualNodeNum = VirtualNodeNum }),
+            TimeProvider.System,
+            NullLogger<MeshOutbox>.Instance);
     }
 }

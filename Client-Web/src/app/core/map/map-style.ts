@@ -8,6 +8,8 @@ import { environment } from '../../../environments/environment';
  */
 export const OPEN_TOPO_MAP_STYLE: StyleSpecification = {
   version: 8,
+  // Font for the numbers on node clusters (MapLibre's public demo fonts).
+  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
   sources: {
     topo: {
       type: 'raster',

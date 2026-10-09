@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading.Channels;
 using Google.Protobuf;
 using Meshtastic.Protobufs;
@@ -66,7 +67,11 @@ public sealed class MeshtasticMqttClient(MeshtasticMqttClientOptions options, Ti
         await _client.SubscribeAsync(subscribe, cancellationToken);
     }
 
-    /// <summary>Every gateway uplink, in arrival order. Ends when the connection is lost.</summary>
+    /// <summary>
+    /// Every message the broker routes to us, in arrival order: gateway uplinks (UserName = the gateway login), the
+    /// broker's <see cref="MeshtrailMqtt.ConnectionsTopic"/> snapshots and other service logins' downlinks (no UserName).
+    /// Ends when the connection is lost.
+    /// </summary>
     public async IAsyncEnumerable<MqttUplink> ReadAllAsync([EnumeratorCancellation] CancellationToken cancellationToken)
     {
         await foreach (var uplink in _uplinks.Reader.ReadAllAsync(cancellationToken))
@@ -75,21 +80,29 @@ public sealed class MeshtasticMqttClient(MeshtasticMqttClientOptions options, Ti
         }
     }
 
-    /// <summary>Sends a packet down: gateways with downlink enabled on <paramref name="channel"/> transmit it.</summary>
-    public Task PublishPacketAsync(string root, string channel, string senderId, MeshPacket packet, CancellationToken cancellationToken)
+    /// <summary>
+    /// Sends a packet down: gateways with downlink enabled on <paramref name="channel"/> transmit it. With
+    /// <paramref name="targetGateway"/> (a gateway login) the Meshtrail broker delivers it to that gateway only.
+    /// </summary>
+    public Task PublishPacketAsync(
+        string root, string channel, string senderId, MeshPacket packet, string? targetGateway, CancellationToken cancellationToken)
     {
         var envelope = new ServiceEnvelope { Packet = packet, ChannelId = channel, GatewayId = senderId };
-        return PublishAsync(MeshtasticTopic.ForEnvelope(root, channel, senderId), envelope.ToByteArray(), cancellationToken);
+        return PublishAsync(MeshtasticTopic.ForEnvelope(root, channel, senderId), envelope.ToByteArray(), targetGateway, cancellationToken);
     }
 
-    public async Task PublishAsync(string topic, byte[] payload, CancellationToken cancellationToken)
+    public async Task PublishAsync(string topic, byte[] payload, string? targetGateway, CancellationToken cancellationToken)
     {
-        var message = new MqttApplicationMessageBuilder()
+        var builder = new MqttApplicationMessageBuilder()
             .WithTopic(topic)
             .WithPayload(payload)
-            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtMostOnce)
-            .Build();
-        await _client.PublishAsync(message, cancellationToken);
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtMostOnce);
+        if (targetGateway is not null)
+        {
+            builder.WithUserProperty(MeshtrailMqtt.TargetProperty, Encoding.UTF8.GetBytes(targetGateway).AsMemory());
+        }
+
+        await _client.PublishAsync(builder.Build(), cancellationToken);
     }
 
     public async Task DisconnectAsync()
@@ -110,8 +123,10 @@ public sealed class MeshtasticMqttClient(MeshtasticMqttClientOptions options, Ti
 
     private Task OnMessageAsync(MqttApplicationMessageReceivedEventArgs args)
     {
+        // The broker stamped the gateway's login on the message; downlinks of other service logins have none.
         var message = args.ApplicationMessage;
-        _uplinks.Writer.TryWrite(MqttUplink.From(timeProvider.GetUtcNow(), null, null, message.Topic, message.Payload.ToArray()));
+        var gateway = MeshtrailMqtt.GetProperty(message, MeshtrailMqtt.GatewayProperty);
+        _uplinks.Writer.TryWrite(MqttUplink.From(timeProvider.GetUtcNow(), null, gateway, message.Topic, message.Payload.ToArray()));
         return Task.CompletedTask;
     }
 

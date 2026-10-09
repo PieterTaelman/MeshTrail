@@ -12,7 +12,7 @@ public enum MeshRadioState
 
 /// <summary>
 /// A link to one Meshtastic node that acts as our gateway to the mesh. Implementations: <see cref="TcpMeshRadio"/>
-/// (real node over WiFi) and <see cref="SimulatedMeshRadio"/> (fake mesh for development and tests).
+/// (real node over WiFi) and the test doubles.
 /// Usage: ConnectAsync, then read ReadAllAsync until it ends (= connection lost), then DisconnectAsync and retry.
 /// </summary>
 public interface IMeshRadio : IAsyncDisposable

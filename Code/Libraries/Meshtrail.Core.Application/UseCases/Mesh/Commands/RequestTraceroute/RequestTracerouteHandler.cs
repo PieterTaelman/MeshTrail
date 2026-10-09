@@ -6,12 +6,13 @@ using Meshtrail.Core.Domain.Mesh;
 
 namespace Meshtrail.Core.Application.UseCases.Mesh.Commands.RequestTraceroute;
 
-/// <summary>Check node and gateway → store a pending traceroute → queue the packet with the same id.</summary>
+/// <summary>Check node → pick the gateway → store a pending traceroute → queue the packet with the same id.</summary>
 public sealed class RequestTracerouteHandler(
     IMeshNodeRepository nodes,
+    INodeReceptionRepository receptions,
     IMeshGatewayRepository gateways,
     INodeTracerouteRepository traceroutes,
-    IMeshGateway meshGateway,
+    IMeshOutbox outbox,
     ICurrentUser currentUser,
     TimeProvider timeProvider) : ICommandHandler<RequestTracerouteCommand, NodeTracerouteDto>
 {
@@ -20,16 +21,15 @@ public sealed class RequestTracerouteHandler(
         _ = await nodes.GetAsync(command.NodeNum, cancellationToken)
             ?? throw new KeyNotFoundException($"Node {MeshNode.FormatNodeId(command.NodeNum)} is not known.");
 
-        var gateway = await gateways.GetAsync(MeshGateway.PrimaryKey, cancellationToken);
-        MeshGateway.EnsureCanSend(gateway);
-
         var now = timeProvider.GetUtcNow();
-        var traceroute = NodeTraceroute.Request(command.NodeNum, meshGateway.NewPacketId(), currentUser.Name, now);
+        var via = await GatewayRoutes.PickAsync(receptions, gateways, command.NodeNum, now, cancellationToken);
+
+        var traceroute = NodeTraceroute.Request(command.NodeNum, outbox.NewPacketId(), currentUser.Name, now);
         await traceroutes.AddAsync(traceroute, cancellationToken);
         await traceroutes.SaveChangesAsync(cancellationToken);
 
         // Queue only after saving, so an answer can never arrive for a traceroute we have not stored.
-        meshGateway.Enqueue(new TracerouteRequest(traceroute.NodeNum, traceroute.PacketId));
+        outbox.Enqueue(new TracerouteRequest(via, traceroute.NodeNum, traceroute.PacketId));
         return traceroute.ToDto(now);
     }
 }

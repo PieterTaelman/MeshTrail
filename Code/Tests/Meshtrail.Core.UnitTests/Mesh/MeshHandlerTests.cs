@@ -1,7 +1,6 @@
 using Meshtrail.Core.Application.Abstractions;
 using Meshtrail.Core.Application.Repositories;
 using Meshtrail.Core.Application.UseCases.Mesh;
-using Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordGatewayStatus;
 using Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordNodeHeard;
 using Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordPosition;
 using Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordTracerouteResult;
@@ -25,10 +24,10 @@ public sealed class MeshHandlerTests
         // Arrange
         var nodes = NodesReturning(null);
         var publisher = Publisher();
-        var handler = new RecordNodeHeardHandler(nodes.Object, GatewaysReturning(Gateway(GatewayStatus.Online)).Object, Registrations().Object, FixedTime(), publisher.Object);
+        var handler = new RecordNodeHeardHandler(Stores(nodes), FixedTime(), publisher.Object);
 
         // Act
-        await handler.Handle(new RecordNodeHeardCommand(HikerNodeNum, Now, 5.0, -80, 1), CancellationToken.None);
+        await handler.Handle(new RecordNodeHeardCommand(HikerNodeNum, GatewayNodeNum, Now, 5.0, -80, 1), CancellationToken.None);
 
         // Assert
         nodes.Verify(repo => repo.AddAsync(It.Is<MeshNode>(node => node.NodeNum == HikerNodeNum && node.LastHeardAt == Now), It.IsAny<CancellationToken>()), Times.Once);
@@ -39,19 +38,32 @@ public sealed class MeshHandlerTests
     }
 
     [TestMethod]
-    public async Task RecordNodeHeard_KnownNode_UpdatesInsteadOfAdding()
+    public async Task RecordNodeHeard_Always_RecordsTheReceptionOfThatGateway()
     {
         // Arrange
-        var node = KnownNode();
-        var nodes = NodesReturning(node);
-        var handler = new RecordNodeHeardHandler(nodes.Object, GatewaysReturning(null).Object, Registrations().Object, FixedTime(), Publisher().Object);
+        var receptions = ReceptionsOf();
+        var handler = new RecordNodeHeardHandler(Stores(NodesReturning(KnownNode()), receptions: receptions), FixedTime(), Publisher().Object);
 
         // Act
-        await handler.Handle(new RecordNodeHeardCommand(HikerNodeNum, Now, null, null, null), CancellationToken.None);
+        await handler.Handle(new RecordNodeHeardCommand(HikerNodeNum, OtherGatewayNodeNum, Now, 5.0, -80, 2), CancellationToken.None);
 
         // Assert
-        nodes.Verify(repo => repo.UpdateAsync(node, It.IsAny<CancellationToken>()), Times.Once);
-        nodes.Verify(repo => repo.AddAsync(It.IsAny<MeshNode>(), It.IsAny<CancellationToken>()), Times.Never);
+        receptions.Verify(repo => repo.RecordAsync(HikerNodeNum, OtherGatewayNodeNum, Now, 5.0, -80, 2, Now, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [TestMethod]
+    public async Task RecordNodeHeard_GatewayNode_IsPublishedAsGateway()
+    {
+        // Arrange
+        var publisher = Publisher();
+        var handler = new RecordNodeHeardHandler(
+            Stores(NodesReturning(KnownNode(GatewayNodeNum)), GatewaysWith(BoundGateway())), FixedTime(), publisher.Object);
+
+        // Act
+        await handler.Handle(new RecordNodeHeardCommand(GatewayNodeNum, GatewayNodeNum, Now, null, null, 0), CancellationToken.None);
+
+        // Assert
+        publisher.Verify(pub => pub.Publish(It.Is<NodeUpdatedNotification>(notification => notification.Node.IsGateway), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [TestMethod]
@@ -59,7 +71,7 @@ public sealed class MeshHandlerTests
     {
         // Arrange
         var nodes = NodesReturning(KnownNode());
-        var handler = new RecordPositionHandler(nodes.Object, GatewaysReturning(null).Object, Registrations().Object, FixedTime(), Publisher().Object);
+        var handler = new RecordPositionHandler(Stores(nodes), FixedTime(), Publisher().Object);
 
         // Act
         await handler.Handle(new RecordPositionCommand(HikerNodeNum, new RadioPosition(50.1, 4.2, 100, null, 32), Now), CancellationToken.None);
@@ -77,7 +89,7 @@ public sealed class MeshHandlerTests
         var node = KnownNode();
         node.RecordPosition(Fix(time: Now), Now);
         var nodes = NodesReturning(node);
-        var handler = new RecordPositionHandler(nodes.Object, GatewaysReturning(null).Object, Registrations().Object, FixedTime(), Publisher().Object);
+        var handler = new RecordPositionHandler(Stores(nodes), FixedTime(), Publisher().Object);
 
         // Act
         await handler.Handle(new RecordPositionCommand(HikerNodeNum, new RadioPosition(51, 5, null, Now.AddHours(-1), 32), Now), CancellationToken.None);
@@ -87,90 +99,72 @@ public sealed class MeshHandlerTests
     }
 
     [TestMethod]
-    public async Task RecordGatewayStatus_Unchanged_DoesNotSaveOrPublish()
-    {
-        // Arrange
-        var gateways = GatewaysReturning(Gateway(GatewayStatus.Online));
-        var publisher = Publisher();
-        var handler = new RecordGatewayStatusHandler(gateways.Object, FixedTime(), publisher.Object);
-
-        // Act
-        await handler.Handle(new RecordGatewayStatusCommand(GatewayStatus.Online, "Tcp", null), CancellationToken.None);
-
-        // Assert
-        gateways.Verify(repo => repo.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
-        publisher.Verify(pub => pub.Publish(It.IsAny<GatewayStatusChangedNotification>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [TestMethod]
-    public async Task RecordGatewayStatus_FirstStart_RegistersGatewayAndPublishes()
-    {
-        // Arrange
-        var gateways = GatewaysReturning(null);
-        var publisher = Publisher();
-        var handler = new RecordGatewayStatusHandler(gateways.Object, FixedTime(), publisher.Object);
-
-        // Act
-        await handler.Handle(new RecordGatewayStatusCommand(GatewayStatus.Connecting, "Simulated", null), CancellationToken.None);
-
-        // Assert
-        gateways.Verify(repo => repo.AddAsync(It.Is<MeshGateway>(gateway => gateway.Status == GatewayStatus.Connecting), It.IsAny<CancellationToken>()), Times.Once);
-        publisher.Verify(pub => pub.Publish(
-            It.Is<GatewayStatusChangedNotification>(notification => notification.Gateway.Status == "Connecting" && notification.Gateway.Mode == "Simulated"),
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [TestMethod]
     public async Task RequestPosition_UnknownNode_ThrowsKeyNotFoundAndQueuesNothing()
     {
         // Arrange
-        var port = MeshGatewayPort();
-        var handler = new RequestPositionHandler(NodesReturning(null).Object, GatewaysReturning(Gateway(GatewayStatus.Online)).Object, port.Object);
+        var outbox = Outbox();
+        var handler = PositionHandler(NodesReturning(null), ReceptionsOf(Heard()), GatewaysWith(BoundGateway()), outbox);
 
         // Act + Assert
         await Should.ThrowAsync<KeyNotFoundException>(async () =>
             await handler.Handle(new RequestPositionCommand(HikerNodeNum), CancellationToken.None));
-        port.Verify(gateway => gateway.Enqueue(It.IsAny<MeshOutboundRequest>()), Times.Never);
+        outbox.Verify(port => port.Enqueue(It.IsAny<MeshOutboundRequest>()), Times.Never);
     }
 
     [TestMethod]
-    public async Task RequestPosition_GatewayOffline_ThrowsDomainException()
+    public async Task RequestPosition_NoGatewayHeardTheNode_ThrowsDomainException()
     {
         // Arrange
-        var port = MeshGatewayPort();
-        var handler = new RequestPositionHandler(NodesReturning(KnownNode()).Object, GatewaysReturning(Gateway(GatewayStatus.Offline)).Object, port.Object);
+        var outbox = Outbox();
+        var handler = PositionHandler(NodesReturning(KnownNode()), ReceptionsOf(), GatewaysWith(BoundGateway()), outbox);
+
+        // Act + Assert
+        var exception = await Should.ThrowAsync<DomainException>(async () =>
+            await handler.Handle(new RequestPositionCommand(HikerNodeNum), CancellationToken.None));
+        exception.Message.ShouldStartWith("No gateway can reach node");
+        outbox.Verify(port => port.Enqueue(It.IsAny<MeshOutboundRequest>()), Times.Never);
+    }
+
+    [TestMethod]
+    public async Task RequestPosition_OnlyAnOfflineGatewayHeardIt_ThrowsDomainException()
+    {
+        // Arrange
+        var handler = PositionHandler(NodesReturning(KnownNode()), ReceptionsOf(Heard()), GatewaysWith(BoundGateway(online: false)), Outbox());
 
         // Act + Assert
         await Should.ThrowAsync<DomainException>(async () =>
             await handler.Handle(new RequestPositionCommand(HikerNodeNum), CancellationToken.None));
-        port.Verify(gateway => gateway.Enqueue(It.IsAny<MeshOutboundRequest>()), Times.Never);
     }
 
     [TestMethod]
-    public async Task RequestPosition_Online_QueuesPositionRequest()
+    public async Task RequestPosition_TwoGatewaysHeardIt_QueuesViaTheBestOne()
     {
         // Arrange
-        var port = MeshGatewayPort(packetId: 555);
-        var handler = new RequestPositionHandler(NodesReturning(KnownNode()).Object, GatewaysReturning(Gateway(GatewayStatus.Online)).Object, port.Object);
+        var outbox = Outbox(packetId: 555);
+        var receptions = ReceptionsOf(Heard(GatewayNodeNum, hops: 2), Heard(OtherGatewayNodeNum, hops: 0));
+        var gateways = GatewaysWith(BoundGateway(), BoundGateway(OtherGatewayNodeNum, login: "gw-other00001"));
+        var handler = PositionHandler(NodesReturning(KnownNode()), receptions, gateways, outbox);
 
         // Act
         await handler.Handle(new RequestPositionCommand(HikerNodeNum), CancellationToken.None);
 
         // Assert
-        port.Verify(gateway => gateway.Enqueue(new PositionRequest(HikerNodeNum, 555)), Times.Once);
+        outbox.Verify(port => port.Enqueue(It.Is<PositionRequest>(request =>
+            request.NodeNum == HikerNodeNum && request.PacketId == 555 && request.Via.GatewayNodeNum == OtherGatewayNodeNum && request.Via.MqttUserName == "gw-other00001")), Times.Once);
     }
 
     [TestMethod]
-    public async Task RequestTraceroute_Online_SavesPendingAndQueuesSamePacketId()
+    public async Task RequestTraceroute_Reachable_SavesPendingAndQueuesSamePacketId()
     {
         // Arrange
         var traceroutes = new Mock<INodeTracerouteRepository>();
-        var port = MeshGatewayPort(packetId: 4242);
+        var outbox = Outbox(packetId: 4242);
         var handler = new RequestTracerouteHandler(
             NodesReturning(KnownNode()).Object,
-            GatewaysReturning(Gateway(GatewayStatus.Online)).Object,
+            ReceptionsOf(Heard()).Object,
+            GatewaysWith(BoundGateway()).Object,
             traceroutes.Object,
-            port.Object,
+            outbox.Object,
             CurrentUser().Object,
             FixedTime());
 
@@ -182,7 +176,7 @@ public sealed class MeshHandlerTests
         result.RequestedBy.ShouldBe(UserName);
         traceroutes.Verify(repo => repo.AddAsync(It.Is<NodeTraceroute>(route => route.PacketId == 4242), It.IsAny<CancellationToken>()), Times.Once);
         traceroutes.Verify(repo => repo.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
-        port.Verify(gateway => gateway.Enqueue(new TracerouteRequest(HikerNodeNum, 4242)), Times.Once);
+        outbox.Verify(port => port.Enqueue(new TracerouteRequest(Route(), HikerNodeNum, 4242)), Times.Once);
     }
 
     [TestMethod]
@@ -221,4 +215,8 @@ public sealed class MeshHandlerTests
             It.Is<TracerouteCompletedNotification>(notification => notification.Traceroute.RouteTowards.Single().NodeNum == 7u),
             It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    private static RequestPositionHandler PositionHandler(
+        Mock<IMeshNodeRepository> nodes, Mock<INodeReceptionRepository> receptions, Mock<IMeshGatewayRepository> gateways, Mock<IMeshOutbox> outbox) =>
+        new(nodes.Object, receptions.Object, gateways.Object, outbox.Object, FixedTime());
 }

@@ -1,6 +1,7 @@
 using Meshtrail.Core.Application.Abstractions;
 using Meshtrail.Core.Application.Repositories;
 using Meshtrail.Core.Application.UseCases.Mesh.Commands.FailTimedOutMessages;
+using Meshtrail.Core.Application.UseCases.Mesh.Commands.ReceiveTextMessage;
 using Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordRoutingResult;
 using Meshtrail.Core.Application.UseCases.Mesh.Commands.RegisterFromContactUrl;
 using Meshtrail.Core.Application.UseCases.Mesh.Commands.SendMessage;
@@ -24,7 +25,7 @@ public sealed class MessagingHandlerTests
     {
         // Arrange
         var message = QueuedMessage();
-        message.MarkSent(GatewayNodeNum, Now);
+        message.MarkSent(Now);
         var messages = MessagesReturning(message);
         var publisher = Publisher();
 
@@ -42,7 +43,7 @@ public sealed class MessagingHandlerTests
     {
         // Arrange
         var message = QueuedMessage();
-        message.MarkSent(GatewayNodeNum, Now);
+        message.MarkSent(Now);
         var messages = MessagesReturning(message);
 
         // Act
@@ -58,7 +59,7 @@ public sealed class MessagingHandlerTests
     {
         // Arrange
         var message = QueuedMessage(to: null);
-        message.MarkSent(GatewayNodeNum, Now);
+        message.MarkSent(Now);
 
         // Act
         await RoutingHandler(MessagesReturning(message), Publisher()).Handle(new RecordRoutingResultCommand(GatewayNodeNum, message.PacketId, "None"), CancellationToken.None);
@@ -72,7 +73,7 @@ public sealed class MessagingHandlerTests
     {
         // Arrange
         var message = QueuedMessage();
-        message.MarkSent(GatewayNodeNum, Now);
+        message.MarkSent(Now);
 
         // Act
         await RoutingHandler(MessagesReturning(message), Publisher()).Handle(new RecordRoutingResultCommand(GatewayNodeNum, message.PacketId, "NoRoute"), CancellationToken.None);
@@ -114,12 +115,14 @@ public sealed class MessagingHandlerTests
     {
         // Arrange
         var message = QueuedMessage();
-        message.MarkSent(GatewayNodeNum, Now.AddMinutes(-5));
+        message.MarkSent(Now.AddMinutes(-5));
         var messages = new Mock<IMeshMessageRepository>();
         messages.Setup(repo => repo.GetSentBeforeAsync(Now, It.IsAny<CancellationToken>())).ReturnsAsync([message]);
+        messages.Setup(repo => repo.GetQueuedBeforeAsync(It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
 
         // Act
-        var count = await new FailTimedOutMessagesHandler(messages.Object, Publisher().Object).Handle(new FailTimedOutMessagesCommand(Now), CancellationToken.None);
+        var count = await new FailTimedOutMessagesHandler(messages.Object, Publisher().Object)
+            .Handle(new FailTimedOutMessagesCommand(Now, Now.AddMinutes(-10)), CancellationToken.None);
 
         // Assert
         count.ShouldBe(1);
@@ -127,39 +130,104 @@ public sealed class MessagingHandlerTests
         message.FailureReason.ShouldBe(FailTimedOutMessagesHandler.TimeoutReason);
     }
 
-    // ---- sending
+    [TestMethod]
+    public async Task FailTimedOut_QueuedBehindOfflineGateway_IsFailed()
+    {
+        // Arrange
+        var message = QueuedMessage();
+        var messages = new Mock<IMeshMessageRepository>();
+        messages.Setup(repo => repo.GetSentBeforeAsync(It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        messages.Setup(repo => repo.GetQueuedBeforeAsync(Now, It.IsAny<CancellationToken>())).ReturnsAsync([message]);
+
+        // Act
+        await new FailTimedOutMessagesHandler(messages.Object, Publisher().Object).Handle(new FailTimedOutMessagesCommand(Now.AddMinutes(-2), Now), CancellationToken.None);
+
+        // Assert
+        message.Status.ShouldBe(MessageStatus.Failed);
+        message.FailureReason.ShouldBe(FailTimedOutMessagesHandler.GatewayOfflineReason);
+    }
+
+    // ---- receiving
 
     [TestMethod]
-    public async Task SendMessage_GatewayOffline_ThrowsAndStoresNothing()
+    public async Task Receive_ChannelMessage_IsStoredButNotPushed()
     {
         // Arrange
         var messages = MessagesReturning(null);
-        var handler = SendHandler(messages, Gateway(GatewayStatus.Offline), MeshGatewayPort());
+        var publisher = Publisher();
+
+        // Act
+        await new ReceiveTextMessageHandler(messages.Object, TeamsWith().Object, publisher.Object).Handle(Text(to: uint.MaxValue), CancellationToken.None);
+
+        // Assert
+        messages.Verify(repo => repo.AddAsync(It.Is<MeshMessage>(m => m.ToNodeNum == null && m.ChannelName == "LongFast"), It.IsAny<CancellationToken>()), Times.Once);
+        publisher.Verify(pub => pub.Publish(It.IsAny<MessageReceivedNotification>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [TestMethod]
+    public async Task Receive_DirectMessageToUs_IsStoredAndPushed()
+    {
+        // Arrange
+        var publisher = Publisher();
+
+        // Act
+        await new ReceiveTextMessageHandler(MessagesReturning(null).Object, TeamsWith().Object, publisher.Object).Handle(Text(to: VirtualNodeNum), CancellationToken.None);
+
+        // Assert
+        publisher.Verify(pub => pub.Publish(
+            It.Is<MessageReceivedNotification>(n => n.Message.PeerNodeNum == HikerNodeNum && n.Message.GatewayNodeNum == GatewayNodeNum),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ---- sending
+
+    [TestMethod]
+    public async Task SendMessage_NoGatewayCanReachTheNode_ThrowsAndStoresNothing()
+    {
+        // Arrange
+        var messages = MessagesReturning(null);
+        var handler = SendHandler(messages, ReceptionsOf(), Outbox());
 
         // Act + Assert
-        await Should.ThrowAsync<DomainException>(async () => await handler.Handle(new SendMessageCommand(0, null, "hi"), CancellationToken.None));
+        await Should.ThrowAsync<DomainException>(async () => await handler.Handle(new SendMessageCommand(HikerNodeNum, null, "hi"), CancellationToken.None));
         messages.Verify(repo => repo.AddAsync(It.IsAny<MeshMessage>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [TestMethod]
-    public async Task SendMessage_DirectMessage_IsStoredThenHandedToTheGateway()
+    public async Task SendMessage_Reachable_IsStoredThenQueuedOnTheBestGatewayFromOurVirtualNode()
     {
         // Arrange
         var messages = MessagesReturning(null);
-        var port = MeshGatewayPort(packetId: 99);
-        var handler = SendHandler(messages, Gateway(GatewayStatus.Online), port);
+        MeshMessage? stored = null;
+        messages.Setup(repo => repo.AddAsync(It.IsAny<MeshMessage>(), It.IsAny<CancellationToken>())).Callback((MeshMessage m, CancellationToken _) => stored = m);
+        var outbox = Outbox(packetId: 99);
+        var handler = SendHandler(messages, ReceptionsOf(Heard()), outbox);
 
         // Act
-        var result = await handler.Handle(new SendMessageCommand(3, HikerNodeNum, "hi"), CancellationToken.None);
+        var result = await handler.Handle(new SendMessageCommand(HikerNodeNum, null, "hi"), CancellationToken.None);
 
         // Assert
         result.Status.ShouldBe("Queued");
-        result.ChannelIndex.ShouldBe(0);
+        result.GatewayNodeNum.ShouldBe(GatewayNodeNum);
+        stored.ShouldNotBeNull().FromNodeNum.ShouldBe(VirtualNodeNum);
         messages.Verify(repo => repo.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
-        port.Verify(gateway => gateway.Enqueue(It.Is<TextMessageRequest>(r => r.NodeNum == HikerNodeNum && r.PacketId == 99 && r.MessageId == result.Id)), Times.Once);
+        outbox.Verify(port => port.Enqueue(It.Is<TextMessageRequest>(r =>
+            r.NodeNum == HikerNodeNum && r.PacketId == 99 && r.MessageId == result.Id && r.Via == Route(GatewayNodeNum))), Times.Once);
     }
 
     // ---- registration
+
+    [TestMethod]
+    public async Task Register_NodeNeverHeard_Throws()
+    {
+        // Arrange
+        var handler = RegisterHandler(Registrations(), MessagesReturning(null), Outbox(), NodesReturning(null));
+
+        // Act + Assert
+        var exception = await Should.ThrowAsync<DomainException>(async () =>
+            await handler.Handle(new RegisterFromContactUrlCommand(GatewayContactUrl), CancellationToken.None));
+        exception.Message.ShouldContain("has not been heard by any gateway yet");
+    }
 
     [TestMethod]
     public async Task Register_OwnEarlierClaim_IsReplaced()
@@ -167,7 +235,7 @@ public sealed class MessagingHandlerTests
         // Arrange
         var earlier = ClaimedRegistration(at: Now.AddMinutes(-2));
         var registrations = Registrations(earlier);
-        var handler = RegisterHandler(registrations, MessagesReturning(null), MeshGatewayPort());
+        var handler = RegisterHandler(registrations, MessagesReturning(null), Outbox());
 
         // Act
         var result = await handler.Handle(new RegisterFromContactUrlCommand(GatewayContactUrl), CancellationToken.None);
@@ -183,7 +251,7 @@ public sealed class MessagingHandlerTests
     {
         // Arrange
         var registrations = Registrations(ClaimedRegistration(userId: "someone-else", at: Now.AddMinutes(-2)));
-        var handler = RegisterHandler(registrations, MessagesReturning(null), MeshGatewayPort());
+        var handler = RegisterHandler(registrations, MessagesReturning(null), Outbox());
 
         // Act + Assert
         var exception = await Should.ThrowAsync<DomainException>(async () =>
@@ -196,7 +264,7 @@ public sealed class MessagingHandlerTests
     {
         // Arrange
         var expired = ClaimedRegistration(userId: "someone-else", at: Now.AddMinutes(-20));
-        var handler = RegisterHandler(Registrations(expired), MessagesReturning(null), MeshGatewayPort());
+        var handler = RegisterHandler(Registrations(expired), MessagesReturning(null), Outbox());
 
         // Act
         await handler.Handle(new RegisterFromContactUrlCommand(GatewayContactUrl), CancellationToken.None);
@@ -211,8 +279,8 @@ public sealed class MessagingHandlerTests
     {
         // Arrange
         var messages = MessagesReturning(null);
-        var port = MeshGatewayPort();
-        var handler = RegisterHandler(Registrations(), messages, port);
+        var outbox = Outbox();
+        var handler = RegisterHandler(Registrations(), messages, outbox);
 
         // Act
         var result = await handler.Handle(new RegisterFromContactUrlCommand(GatewayContactUrl), CancellationToken.None);
@@ -220,7 +288,7 @@ public sealed class MessagingHandlerTests
         // Assert
         result.VerificationMessageStatus.ShouldBe("Queued");
         messages.Verify(repo => repo.AddAsync(It.Is<MeshMessage>(m => m.Kind == MessageKind.Verification && m.Text.Contains("123456")), It.IsAny<CancellationToken>()), Times.Once);
-        port.Verify(gateway => gateway.Enqueue(It.Is<TextMessageRequest>(r => r.NodeNum == GatewayNodeNum && r.Text.Contains("123456"))), Times.Once);
+        outbox.Verify(port => port.Enqueue(It.Is<TextMessageRequest>(r => r.NodeNum == GatewayNodeNum && r.Text.Contains("123456"))), Times.Once);
     }
 
     [TestMethod]
@@ -229,7 +297,7 @@ public sealed class MessagingHandlerTests
         // Arrange
         var registration = ClaimedRegistration();
         var registrations = Registrations(registration);
-        var handler = VerifyHandler(registrations, MeshGatewayPort());
+        var handler = VerifyHandler(registrations, Outbox());
 
         // Act + Assert
         var exception = await Should.ThrowAsync<DomainException>(async () =>
@@ -239,19 +307,22 @@ public sealed class MessagingHandlerTests
     }
 
     [TestMethod]
-    public async Task Verify_RightCode_SendsContactToGateway()
+    public async Task Verify_RightCode_SendsContactToTcpGatewaysOnly()
     {
         // Arrange
         var registration = ClaimedRegistration();
-        var port = MeshGatewayPort();
-        var handler = VerifyHandler(Registrations(registration), port);
+        var outbox = Outbox();
+        var tcp = MeshGateway.Local(GatewayTransport.Tcp, OtherGatewayNodeNum, Now);
+        var handler = VerifyHandler(Registrations(registration), outbox, GatewaysWith(BoundGateway(), tcp));
 
         // Act
         var result = await handler.Handle(new VerifyRegistrationCommand(registration.Id, "123456"), CancellationToken.None);
 
         // Assert
         result.Status.ShouldBe("Verified");
-        port.Verify(gateway => gateway.Enqueue(It.Is<AddContactRequest>(r => r.NodeNum == HikerNodeNum && r.PublicKey.SequenceEqual(GatewayPublicKey))), Times.Once);
+        outbox.Verify(port => port.Enqueue(It.Is<AddContactRequest>(r =>
+            r.NodeNum == HikerNodeNum && r.Via.GatewayNodeNum == OtherGatewayNodeNum && r.PublicKey.SequenceEqual(GatewayPublicKey))), Times.Once);
+        outbox.Verify(port => port.Enqueue(It.Is<AddContactRequest>(r => r.Via.GatewayNodeNum == GatewayNodeNum)), Times.Never);
     }
 
     [TestMethod]
@@ -259,7 +330,7 @@ public sealed class MessagingHandlerTests
     {
         // Arrange
         var registration = ClaimedRegistration(userId: "someone-else");
-        var handler = VerifyHandler(Registrations(registration), MeshGatewayPort());
+        var handler = VerifyHandler(Registrations(registration), Outbox());
 
         // Act + Assert
         await Should.ThrowAsync<KeyNotFoundException>(async () =>
@@ -268,14 +339,26 @@ public sealed class MessagingHandlerTests
 
     // ---- builders
 
-    private static RecordRoutingResultHandler RoutingHandler(Mock<IMeshMessageRepository> messages, Mock<Mediator.IPublisher> publisher) =>
-        new(messages.Object, GatewaysReturning(Gateway(GatewayStatus.Online)).Object, FixedTime(), publisher.Object);
+    private static ReceiveTextMessageCommand Text(uint to) =>
+        new(HikerNodeNum, to, 0, "LongFast", GatewayNodeNum, "hi", 77, 5, -80, 1, Now);
 
-    private static SendMessageHandler SendHandler(Mock<IMeshMessageRepository> messages, MeshGateway gateway, Mock<IMeshGateway> port) =>
-        new(NodesReturning(KnownNode()).Object, GatewaysReturning(gateway).Object, messages.Object, port.Object, CurrentUser().Object, FixedTime(), Publisher().Object);
+    private static RecordRoutingResultHandler RoutingHandler(Mock<IMeshMessageRepository> messages, Mock<Mediator.IPublisher> publisher) =>
+        new(messages.Object, FixedTime(), publisher.Object);
+
+    private static SendMessageHandler SendHandler(Mock<IMeshMessageRepository> messages, Mock<INodeReceptionRepository> receptions, Mock<IMeshOutbox> outbox) =>
+        new(
+            NodesReturning(KnownNode()).Object,
+            receptions.Object,
+            GatewaysWith(BoundGateway()).Object,
+            TeamsWith().Object,
+            messages.Object,
+            outbox.Object,
+            CurrentUser().Object,
+            FixedTime(),
+            Publisher().Object);
 
     private static RegisterFromContactUrlHandler RegisterHandler(
-        Mock<INodeRegistrationRepository> registrations, Mock<IMeshMessageRepository> messages, Mock<IMeshGateway> port)
+        Mock<INodeRegistrationRepository> registrations, Mock<IMeshMessageRepository> messages, Mock<IMeshOutbox> outbox, Mock<IMeshNodeRepository>? nodes = null)
     {
         var parser = new Mock<IContactUrlParser>();
         var contact = new ParsedContact(GatewayNodeNum, "Node 2109", "2109", "M5StackC6L", "Client", GatewayPublicKey);
@@ -283,31 +366,29 @@ public sealed class MessagingHandlerTests
         var codes = new Mock<IVerificationCodeGenerator>();
         codes.Setup(generator => generator.NewCode()).Returns("123456");
 
+        // The registered node is heard by another gateway (a node cannot be routed through itself in this example).
         return new RegisterFromContactUrlHandler(
             parser.Object,
-            NodesReturning(KnownNode(GatewayNodeNum)).Object,
-            GatewaysReturning(Gateway(GatewayStatus.Online)).Object,
+            (nodes ?? NodesReturning(KnownNode(GatewayNodeNum))).Object,
+            ReceptionsOf(Heard(OtherGatewayNodeNum, nodeNum: GatewayNodeNum)).Object,
+            GatewaysWith(BoundGateway(OtherGatewayNodeNum)).Object,
             registrations.Object,
             messages.Object,
-            port.Object,
+            outbox.Object,
             codes.Object,
             CurrentUser().Object,
             FixedTime(),
             Publisher().Object);
     }
 
-    private static VerifyRegistrationHandler VerifyHandler(Mock<INodeRegistrationRepository> registrations, Mock<IMeshGateway> port)
-    {
-        var user = CurrentUser();
-        user.SetupGet(u => u.Id).Returns(UserName);
-        return new VerifyRegistrationHandler(
+    private static VerifyRegistrationHandler VerifyHandler(
+        Mock<INodeRegistrationRepository> registrations, Mock<IMeshOutbox> outbox, Mock<IMeshGatewayRepository>? gateways = null) =>
+        new(
             registrations.Object,
-            NodesReturning(KnownNode()).Object,
-            GatewaysReturning(Gateway(GatewayStatus.Online)).Object,
+            Stores(NodesReturning(KnownNode()), gateways ?? GatewaysWith(BoundGateway()), registrations: registrations),
             MessagesReturning(null).Object,
-            port.Object,
-            user.Object,
+            outbox.Object,
+            CurrentUser().Object,
             FixedTime(),
             Publisher().Object);
-    }
 }

@@ -6,6 +6,7 @@ using Meshtastic.Protobufs;
 using Meshtrail.Mesh.Mqtt;
 using Microsoft.Extensions.Logging.Abstractions;
 using MQTTnet;
+using MQTTnet.Formatter;
 using Shouldly;
 
 namespace Meshtrail.Core.IntegrationTests.Mesh;
@@ -35,12 +36,94 @@ public sealed class MqttBrokerTests
 
         // Act
         await gatewayA.PublishAsync(Uplink("!0000000a", "hello"));
-        var uplink = await FirstAsync(service.ReadAllAsync(Timeout()));
+        var uplink = await FirstAsync(service.ReadAllAsync(Timeout()), message => message.Envelope is not null);
 
         // Assert
         uplink.Topic!.GatewayId.ShouldBe("!0000000a");
+        uplink.UserName.ShouldBe("gw-a");
         uplink.Envelope!.Packet.Decoded.Payload.ToStringUtf8().ShouldBe("hello");
         (await Task.WhenAny(gatewayBReceived.Task, Task.Delay(1000))).ShouldNotBe(gatewayBReceived.Task);
+    }
+
+    [TestMethod]
+    public async Task GatewayUplink_CannotPretendToBeAnotherGateway()
+    {
+        // Arrange: an MQTT 5 gateway sets the login property itself.
+        var (broker, port) = await StartBrokerAsync();
+        await using var _ = broker;
+        await using var service = await ConnectServiceAsync(port);
+        using var gateway = await ConnectGatewayAsync(port, "a");
+        var forged = Uplink("!0000000a", "forged");
+        forged.UserProperties = [new MQTTnet.Packets.MqttUserProperty(MeshtrailMqtt.GatewayProperty, System.Text.Encoding.UTF8.GetBytes("gw-victim"))];
+
+        // Act
+        await gateway.PublishAsync(forged);
+        var uplink = await FirstAsync(service.ReadAllAsync(Timeout()), message => message.Envelope is not null);
+
+        // Assert
+        uplink.UserName.ShouldBe("gw-a");
+    }
+
+    [TestMethod]
+    public async Task TargetedDownlink_ReachesOnlyThatGateway()
+    {
+        // Arrange
+        var (broker, port) = await StartBrokerAsync();
+        await using var _ = broker;
+        await using var service = await ConnectServiceAsync(port);
+        using var gatewayA = await ConnectGatewayAsync(port, "a");
+        using var gatewayB = await ConnectGatewayAsync(port, "b");
+        var receivedA = Subscribe(gatewayA);
+        var receivedB = Subscribe(gatewayB);
+        await gatewayA.SubscribeAsync(DownlinkFilter);
+        await gatewayB.SubscribeAsync(DownlinkFilter);
+
+        // Act
+        await service.PublishPacketAsync(Root, "LongFast", "!4d545231", new MeshPacket { To = 0x0aa0_0001, Id = 9 }, "gw-b", CancellationToken.None);
+
+        // Assert
+        (await receivedB.Task.WaitAsync(TimeSpan.FromSeconds(5))).Topic.ShouldBe($"{Root}/2/e/LongFast/!4d545231");
+        (await Task.WhenAny(receivedA.Task, Task.Delay(1000))).ShouldNotBe(receivedA.Task);
+    }
+
+    [TestMethod]
+    public async Task GatewayConnects_ServiceGetsTheListOfConnectedLogins()
+    {
+        // Arrange
+        var (broker, port) = await StartBrokerAsync();
+        await using var _ = broker;
+        await using var service = await ConnectServiceAsync(port);
+
+        // Act
+        using var gateway = await ConnectGatewayAsync(port, "a");
+        GatewayConnections? connections = null;
+        await foreach (var message in service.ReadAllAsync(Timeout()))
+        {
+            if (message.RawTopic == MeshtrailMqtt.ConnectionsTopic)
+            {
+                connections = MeshtrailMqtt.DeserializeConnections(message.Payload);
+                break;
+            }
+        }
+
+        // Assert
+        connections.ShouldNotBeNull();
+        connections.Broker.ShouldBe("local");
+        connections.UserNames.ShouldBe(["gw-a"]);
+    }
+
+    [TestMethod]
+    public async Task KnownGatewayLogin_IsAcceptedByTheAuthenticator()
+    {
+        // Arrange
+        var (broker, port) = await StartBrokerAsync(allowAnyGateway: false, authenticate: login => login.UserName == "gw-ok" && login.Password == "whatever");
+        await using var _ = broker;
+
+        // Act
+        using var gateway = await ConnectGatewayAsync(port, "ok");
+
+        // Assert
+        gateway.IsConnected.ShouldBeTrue();
     }
 
     [TestMethod]
@@ -56,7 +139,7 @@ public sealed class MqttBrokerTests
         var packet = new MeshPacket { From = 0x4d54_5231, To = 0x0aa0_0001, Id = 7, WantAck = true };
 
         // Act
-        await service.PublishPacketAsync(Root, "LongFast", "!4d545231", packet, CancellationToken.None);
+        await service.PublishPacketAsync(Root, "LongFast", "!4d545231", packet, null, CancellationToken.None);
         var message = await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         // Assert
@@ -77,8 +160,8 @@ public sealed class MqttBrokerTests
         var packet = new MeshPacket { From = 0x4d54_5231, To = 0x0aa0_0001, Id = 8 };
 
         // Act
-        await api.PublishPacketAsync(Root, "LongFast", "!4d545231", packet, CancellationToken.None);
-        var seen = await FirstAsync(observer.ReadAllAsync(Timeout()));
+        await api.PublishPacketAsync(Root, "LongFast", "!4d545231", packet, null, CancellationToken.None);
+        var seen = await FirstAsync(observer.ReadAllAsync(Timeout()), message => message.Envelope is not null);
 
         // Assert
         seen.Envelope!.Packet.Id.ShouldBe(8u);
@@ -123,7 +206,7 @@ public sealed class MqttBrokerTests
             await gateway.PublishAsync(Uplink("!0000000a", $"m{i}"));
         }
 
-        var received = await CountAsync(service.ReadAllAsync(Timeout(TimeSpan.FromSeconds(2))));
+        var received = await CountAsync(service.ReadAllAsync(Timeout(TimeSpan.FromSeconds(2))), message => message.Envelope is not null);
 
         // Assert: at most 3 per second; the burst may straddle a second boundary.
         received.ShouldBeInRange(1, 6);
@@ -147,7 +230,8 @@ public sealed class MqttBrokerTests
         }.ToByteArray())
         .Build();
 
-    private static async Task<(MeshtasticMqttBroker Broker, int Port)> StartBrokerAsync(bool allowAnyGateway = true, int maxPerSecond = 20)
+    private static async Task<(MeshtasticMqttBroker Broker, int Port)> StartBrokerAsync(
+        bool allowAnyGateway = true, int maxPerSecond = 20, Func<GatewayLogin, bool>? authenticate = null)
     {
         var port = FreePort();
         var broker = new MeshtasticMqttBroker(
@@ -159,7 +243,7 @@ public sealed class MqttBrokerTests
                 AllowAnyGateway = allowAnyGateway,
                 MaxMessagesPerSecondPerGateway = maxPerSecond,
             },
-            (_, _, _) => false,
+            (login, _) => Task.FromResult(authenticate?.Invoke(login) ?? false),
             TimeProvider.System,
             NullLogger.Instance);
         await broker.StartAsync();
@@ -177,10 +261,12 @@ public sealed class MqttBrokerTests
     private static async Task<IMqttClient> ConnectGatewayAsync(int port, string name)
     {
         var client = new MqttClientFactory().CreateMqttClient();
+        // MQTT 5, so a test can try to set user properties itself (real gateways use 3.1.1).
         var options = new MqttClientOptionsBuilder()
             .WithTcpServer("127.0.0.1", port)
             .WithClientId($"gateway-{name}-{Guid.NewGuid():N}")
             .WithCredentials($"gw-{name}", "whatever")
+            .WithProtocolVersion(MqttProtocolVersion.V500)
             .Build();
         var result = await client.ConnectAsync(options);
         if (result.ResultCode != MqttClientConnectResultCode.Success)
@@ -205,24 +291,28 @@ public sealed class MqttBrokerTests
 
     private static CancellationToken Timeout(TimeSpan? after = null) => new CancellationTokenSource(after ?? TimeSpan.FromSeconds(5)).Token;
 
-    private static async Task<MqttUplink> FirstAsync(IAsyncEnumerable<MqttUplink> uplinks)
+    /// <summary>The first message that matches (the service also gets the broker's connection lists).</summary>
+    private static async Task<MqttUplink> FirstAsync(IAsyncEnumerable<MqttUplink> uplinks, Func<MqttUplink, bool> match)
     {
         await foreach (var uplink in uplinks)
         {
-            return uplink;
+            if (match(uplink))
+            {
+                return uplink;
+            }
         }
 
         throw new TimeoutException("No uplink received.");
     }
 
-    private static async Task<int> CountAsync(IAsyncEnumerable<MqttUplink> uplinks)
+    private static async Task<int> CountAsync(IAsyncEnumerable<MqttUplink> uplinks, Func<MqttUplink, bool> match)
     {
         var count = 0;
         try
         {
-            await foreach (var _ in uplinks)
+            await foreach (var uplink in uplinks)
             {
-                count++;
+                count += match(uplink) ? 1 : 0;
             }
         }
         catch (OperationCanceledException)

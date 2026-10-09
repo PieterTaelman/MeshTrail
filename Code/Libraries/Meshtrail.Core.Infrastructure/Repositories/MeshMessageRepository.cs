@@ -30,11 +30,28 @@ internal sealed class MeshMessageRepository(MeshtrailDbContext dbContext) : IMes
     public async Task<bool> InboundExistsAsync(uint fromNodeNum, uint packetId, CancellationToken cancellationToken) =>
         await Messages.AnyAsync(row => row.Direction == Inbound && row.FromNodeNum == fromNodeNum && row.PacketId == packetId, cancellationToken);
 
-    public async Task<IReadOnlyList<MeshMessage>> GetQueuedAsync(CancellationToken cancellationToken) =>
+    public async Task<IReadOnlyList<MeshMessage>> GetQueuedAsync(uint gatewayNodeNum, CancellationToken cancellationToken) =>
         TrackAll(await Messages
-            .Where(row => row.Direction == Outbound && row.Status == nameof(MessageStatus.Queued))
+            .Where(row => row.Direction == Outbound && row.Status == nameof(MessageStatus.Queued) && row.GatewayNodeNum == gatewayNodeNum)
             .OrderBy(row => row.CreatedAt)
             .ToListAsync(cancellationToken));
+
+    public async Task<IReadOnlyList<MeshMessage>> GetQueuedBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken) =>
+        TrackAll(await Messages
+            .Where(row => row.Direction == Outbound && row.Status == nameof(MessageStatus.Queued) && row.CreatedAt < cutoff)
+            .ToListAsync(cancellationToken));
+
+    public async Task<IReadOnlyList<string>> GetAuthorIdsToNodeAsync(uint nodeNum, CancellationToken cancellationToken) =>
+        await Messages.AsNoTracking()
+            .Where(row => row.Direction == Outbound && row.ToNodeNum == nodeNum && row.Kind == nameof(MessageKind.Text) && row.CreatedById != null)
+            .Select(row => row.CreatedById!)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+    public async Task<int> DeleteInboundBroadcastsBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken) =>
+        await Messages
+            .Where(row => row.Direction == Inbound && row.ToNodeNum == null && row.TeamId == null && row.CreatedAt < cutoff)
+            .ExecuteDeleteAsync(cancellationToken);
 
     public async Task<IReadOnlyList<MeshMessage>> GetSentBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken) =>
         TrackAll(await Messages
@@ -45,17 +62,17 @@ internal sealed class MeshMessageRepository(MeshtrailDbContext dbContext) : IMes
     {
         var query = Messages.AsNoTracking().Where(row => row.Kind != nameof(MessageKind.Verification));
 
-        if (request.Node is { } nodeNum)
+        if (request.Team is { } teamId)
         {
-            // A conversation: what this node sent us directly, and what we sent to it.
-            query = query.Where(row =>
-                (row.Direction == Inbound && row.FromNodeNum == nodeNum && row.ToNodeNum != null) ||
-                (row.Direction == Outbound && row.ToNodeNum == nodeNum));
+            query = query.Where(row => row.TeamId == teamId);
         }
         else
         {
-            var channel = request.Channel ?? 0;
-            query = query.Where(row => row.ToNodeNum == null && row.ChannelIndex == channel);
+            // A conversation: what this node sent us directly, and what we sent to it.
+            var nodeNum = request.Node ?? 0;
+            query = query.Where(row =>
+                (row.Direction == Inbound && row.FromNodeNum == nodeNum && row.ToNodeNum != null) ||
+                (row.Direction == Outbound && row.ToNodeNum == nodeNum));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);

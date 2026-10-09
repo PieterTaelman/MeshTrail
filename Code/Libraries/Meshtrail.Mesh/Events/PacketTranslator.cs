@@ -4,16 +4,16 @@ using Meshtastic.Protobufs;
 namespace Meshtrail.Mesh.Events;
 
 /// <summary>
-/// Turns protobuf messages from the gateway into <see cref="MeshEvent"/>s. Keeps one piece of state: the gateway's
+/// Turns protobuf messages from a gateway into <see cref="MeshEvent"/>s. Keeps one piece of state: the gateway's
 /// own node number, so packets the gateway itself sends are not reported with a fake 0 dB signal.
-/// Use one instance per connection.
+/// Use one instance per gateway connection (TCP learns the number from MyInfo; MQTT knows it from the topic).
 /// </summary>
-public sealed class PacketTranslator
+public sealed class PacketTranslator(uint? gatewayNodeNum = null)
 {
     /// <summary>The protocol uses -128 (INT8_MIN) for "SNR unknown" in traceroutes.</summary>
     private const int UnknownSnr = sbyte.MinValue;
 
-    public uint? GatewayNodeNum { get; private set; }
+    public uint? GatewayNodeNum { get; private set; } = gatewayNodeNum;
 
     public IReadOnlyList<MeshEvent> Translate(FromRadio message, DateTimeOffset receivedAt) => message.PayloadVariantCase switch
     {
@@ -90,7 +90,7 @@ public sealed class PacketTranslator
             heard.ReceivedAt, packet.From, packet.To, (int)packet.Channel, data.Payload.ToStringUtf8(), packet.Id, heard.Snr, heard.Rssi, heard.HopsAway),
         // Only reports about our own packets (request_id set) matter.
         PortNum.RoutingApp when data.RequestId != 0 =>
-            new RoutingReceived(heard.ReceivedAt, packet.From, data.RequestId, Routing.Parser.ParseFrom(data.Payload).ErrorReason.ToString()),
+            new RoutingReceived(heard.ReceivedAt, packet.From, packet.To, data.RequestId, Routing.Parser.ParseFrom(data.Payload).ErrorReason.ToString()),
         PortNum.NodeinfoApp => new NodeUserReceived(heard.ReceivedAt, packet.From, ToUser(User.Parser.ParseFrom(data.Payload))),
         PortNum.PositionApp when ToPosition(Position.Parser.ParseFrom(data.Payload)) is { } position =>
             new PositionReceived(heard.ReceivedAt, packet.From, position),

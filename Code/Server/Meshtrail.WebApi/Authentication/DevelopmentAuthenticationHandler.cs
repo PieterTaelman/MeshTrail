@@ -6,8 +6,9 @@ using Microsoft.Extensions.Options;
 namespace Meshtrail.WebApi.Authentication;
 
 /// <summary>
-/// Signs every request in as one configurable user (Authentication:DevelopmentUser), so local runs and
-/// integration tests work before an identity provider exists. Never enabled outside Development/Testing.
+/// Signs every request in as one configurable user (Authentication:DevelopmentUser), so local runs and integration
+/// tests work before an identity provider exists. An X-Dev-User header picks another user, so tests can act as
+/// several people. Never enabled outside Development/Testing (see <see cref="AuthenticationSetup"/>).
 /// </summary>
 internal sealed class DevelopmentAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -17,10 +18,17 @@ internal sealed class DevelopmentAuthenticationHandler(
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     public const string SchemeName = "Development";
+    public const string UserHeader = "X-Dev-User";
+
+    /// <summary>Header values longer than this are ignored (the name ends up in audit columns).</summary>
+    private const int MaxUserLength = 64;
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var userName = configuration["Authentication:DevelopmentUser"] ?? "developer";
+        var requested = Request.Headers[UserHeader].ToString().Trim();
+        var userName = requested is { Length: > 0 and <= MaxUserLength }
+            ? requested
+            : configuration["Authentication:DevelopmentUser"] ?? "developer";
         Claim[] claims =
         [
             new(ClaimTypes.NameIdentifier, userName),

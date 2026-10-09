@@ -33,24 +33,23 @@ internal static partial class MessagingApiTestHelpers
     /// <summary>Reads the code out of the direct message the API sent to the node (what the user sees on its screen).</summary>
     public static async Task<string> SentCodeAsync(uint nodeNum)
     {
-        var packet = await Radio.WaitForSentPacketAsync(sent => sent.To == nodeNum && sent.Decoded.Portnum == PortNum.TextMessageApp);
+        var (_, packet) = await Transport.WaitForSentAsync((_, sent) => sent.To == nodeNum && sent.Decoded.Portnum == PortNum.TextMessageApp);
         return SixDigits().Match(packet.Decoded.Payload.ToStringUtf8()).Value;
     }
 
-    /// <summary>A delivery report from <paramref name="from"/> for our packet.</summary>
-    public static FromRadio RoutingReport(uint from, uint requestId, Routing.Types.Error error = Routing.Types.Error.None) =>
-        Packet(from, PortNum.RoutingApp, new Routing { ErrorReason = error }, requestId);
+    /// <summary>A delivery report from <paramref name="from"/> for our packet (addressed to our virtual node).</summary>
+    public static MeshPacket RoutingReport(uint from, uint requestId, Routing.Types.Error error = Routing.Types.Error.None) =>
+        Packet(from, PortNum.RoutingApp, new Routing { ErrorReason = error }, requestId, to: VirtualNodeNum);
 
-    public static FromRadio TextFrom(uint from, uint to, string text, uint packetId)
+    public static MeshPacket TextFrom(uint from, uint to, string text, uint packetId)
     {
-        var message = Packet(from, PortNum.TextMessageApp, new Position(), 0);
-        message.Packet.To = to;
-        message.Packet.Id = packetId;
-        message.Packet.Decoded.Payload = ByteString.CopyFromUtf8(text);
-        return message;
+        var packet = Packet(from, PortNum.TextMessageApp, new Position(), 0, to);
+        packet.Id = packetId;
+        packet.Decoded.Payload = ByteString.CopyFromUtf8(text);
+        return packet;
     }
 
-    /// <summary>Waits until the message with this id shows the expected status in its conversation or channel.</summary>
+    /// <summary>Waits until the message with this id shows the expected status in its conversation.</summary>
     public static Task<MessageDto> WaitForStatusAsync(HttpClient client, string listUrl, Guid messageId, string status) =>
         EventuallyAsync(
             async () => (await TryGetAsync<PagedResult<MessageDto>>(client, listUrl))?.Items.FirstOrDefault(message => message.Id == messageId),

@@ -77,31 +77,64 @@ internal static class MeshMapper
     // ---- MeshGateway
 
     public static MeshGateway ToDomain(this DbMeshGateway row) => MeshGateway.Rehydrate(
-        row.GatewayKey,
-        row.Mode,
+        row.Id,
+        row.NodeNum is { } nodeNum ? (uint)nodeNum : null,
+        Enum.Parse<GatewayTransport>(row.Transport),
+        row.OwnerUserId,
+        row.OwnerName,
+        row.MqttUserName,
+        row.CredentialHash,
+        row.Broker,
+        row.MqttRoot,
+        row.DownlinkChannel,
         Enum.Parse<GatewayStatus>(row.Status),
         row.StatusChangedAt,
-        row.LastConnectedAt,
+        row.LastUplinkAt,
         row.LastError,
-        row.NodeNum is { } nodeNum ? (uint)nodeNum : null,
-        row.FirmwareVersion);
+        row.FirmwareVersion,
+        row.CreatedAt,
+        row.RevokedAt);
 
     public static DbMeshGateway ToDb(this MeshGateway gateway)
     {
-        var row = new DbMeshGateway { GatewayKey = gateway.GatewayKey };
+        var row = new DbMeshGateway { Id = gateway.Id };
         gateway.CopyTo(row);
         return row;
     }
 
     public static void CopyTo(this MeshGateway gateway, DbMeshGateway row)
     {
-        row.Mode = gateway.Mode;
+        row.NodeNum = gateway.NodeNum;
+        row.Transport = gateway.Transport.ToString();
+        row.OwnerUserId = gateway.OwnerUserId;
+        row.OwnerName = gateway.OwnerName;
+        row.MqttUserName = gateway.MqttUserName;
+        row.CredentialHash = gateway.CredentialHash;
+        row.Broker = gateway.Broker;
+        row.MqttRoot = gateway.MqttRoot;
+        row.DownlinkChannel = gateway.DownlinkChannel;
         row.Status = gateway.Status.ToString();
         row.StatusChangedAt = gateway.StatusChangedAt;
-        row.LastConnectedAt = gateway.LastConnectedAt;
+        row.LastUplinkAt = gateway.LastUplinkAt;
         row.LastError = gateway.LastError;
-        row.NodeNum = gateway.NodeNum;
         row.FirmwareVersion = gateway.FirmwareVersion;
+        row.CreatedAt = gateway.CreatedAt;
+        row.RevokedAt = gateway.RevokedAt;
+    }
+
+    // ---- NodeReception
+
+    public static NodeReception ToDomain(this DbNodeReception row) => NodeReception.Rehydrate(
+        (uint)row.NodeNum, (uint)row.GatewayNodeNum, row.LastHeardAt, row.Snr, row.Rssi, row.HopsAway);
+
+    public static void CopyTo(this NodeReception reception, DbNodeReception row)
+    {
+        row.NodeNum = reception.NodeNum;
+        row.GatewayNodeNum = reception.GatewayNodeNum;
+        row.LastHeardAt = reception.LastHeardAt;
+        row.Snr = reception.Snr;
+        row.Rssi = reception.Rssi;
+        row.HopsAway = reception.HopsAway;
     }
 
     // ---- NodeTraceroute
@@ -194,6 +227,8 @@ internal static class MeshMapper
         Enum.Parse<MessageDirection>(row.Direction),
         Enum.Parse<MessageKind>(row.Kind),
         row.ChannelIndex,
+        row.ChannelName,
+        row.GatewayNodeNum is { } gateway ? (uint)gateway : null,
         row.FromNodeNum is { } from ? (uint)from : null,
         row.ToNodeNum is { } to ? (uint)to : null,
         row.Text,
@@ -204,9 +239,11 @@ internal static class MeshMapper
         row.Rssi,
         row.HopsAway,
         row.CreatedAt,
+        row.CreatedById,
         row.CreatedBy,
         row.SentAt,
-        row.AckedAt);
+        row.AckedAt,
+        row.TeamId);
 
     public static DbMeshMessage ToDb(this MeshMessage message)
     {
@@ -220,6 +257,8 @@ internal static class MeshMapper
         row.Direction = message.Direction.ToString();
         row.Kind = message.Kind.ToString();
         row.ChannelIndex = message.ChannelIndex;
+        row.ChannelName = message.ChannelName;
+        row.GatewayNodeNum = message.GatewayNodeNum;
         row.FromNodeNum = message.FromNodeNum;
         row.ToNodeNum = message.ToNodeNum;
         row.Text = message.Text;
@@ -230,9 +269,11 @@ internal static class MeshMapper
         row.Rssi = message.Rssi;
         row.HopsAway = message.HopsAway;
         row.CreatedAt = message.CreatedAt;
+        row.CreatedById = message.CreatedById;
         row.CreatedBy = message.CreatedBy;
         row.SentAt = message.SentAt;
         row.AckedAt = message.AckedAt;
+        row.TeamId = message.TeamId;
     }
 
     private static string FormatSnr(double? snr) => snr?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;

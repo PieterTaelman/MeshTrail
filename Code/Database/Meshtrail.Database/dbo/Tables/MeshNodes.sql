@@ -1,4 +1,4 @@
--- Every Meshtastic node the gateway has ever heard of ("discovered"), with its latest state.
+-- Every Meshtastic node any gateway has ever heard of ("discovered"), with its latest state.
 CREATE TABLE [dbo].[MeshNodes]
 (
     -- uint32 node number from the radio; BIGINT because it does not fit in INT.
@@ -33,4 +33,8 @@ GO
 
 -- "Who was heard recently" (online filter, node list order).
 CREATE NONCLUSTERED INDEX [IX_MeshNodes_LastHeardAt] ON [dbo].[MeshNodes] ([LastHeardAt]);
+GO
+
+-- Nodes in the map view (bounding-box filter).
+CREATE NONCLUSTERED INDEX [IX_MeshNodes_Position] ON [dbo].[MeshNodes] ([Latitude], [Longitude]) WHERE [Latitude] IS NOT NULL;
 GO

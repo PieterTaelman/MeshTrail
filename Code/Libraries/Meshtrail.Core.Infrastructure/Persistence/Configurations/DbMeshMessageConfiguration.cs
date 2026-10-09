@@ -16,9 +16,11 @@ internal sealed class DbMeshMessageConfiguration : IEntityTypeConfiguration<DbMe
         builder.Property(message => message.Id).ValueGeneratedNever();
         builder.Property(message => message.Direction).HasMaxLength(10).IsRequired();
         builder.Property(message => message.Kind).HasMaxLength(20).IsRequired();
+        builder.Property(message => message.ChannelName).HasMaxLength(MeshMessage.ChannelNameMaxLength);
         builder.Property(message => message.Text).HasMaxLength(MeshMessage.StoredTextMaxLength).IsRequired();
         builder.Property(message => message.Status).HasMaxLength(20).IsRequired();
         builder.Property(message => message.FailureReason).HasMaxLength(MeshMessage.FailureReasonMaxLength);
+        builder.Property(message => message.CreatedById).HasMaxLength(256);
         builder.Property(message => message.CreatedBy).HasMaxLength(256);
     }
 }

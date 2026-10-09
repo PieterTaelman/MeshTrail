@@ -1,4 +1,11 @@
-import { chatTabKey, statusMark, tabOf, upsertMessage, utf8ByteCount } from './mesh-format';
+import {
+  chatTabKey,
+  formatNodeId,
+  statusMark,
+  tabOf,
+  upsertMessage,
+  utf8ByteCount,
+} from './mesh-format';
 import { MeshMessage, PagedResult } from './mesh.models';
 
 const message = (overrides: Partial<MeshMessage>): MeshMessage =>
@@ -22,9 +29,17 @@ describe('chat helpers', () => {
     expect(utf8ByteCount('🙂')).toBe(4);
   });
 
-  it('puts broadcasts in their channel tab and direct messages in the peer tab', () => {
-    expect(chatTabKey(tabOf(message({ channelIndex: 0 })))).toBe('ch:0');
-    expect(chatTabKey(tabOf(message({ toNodeNum: 1, peerNodeNum: 42 })))).toBe('dm:42');
+  it('puts team messages in the team tab, direct messages in the peer tab, and drops other broadcasts', () => {
+    const team = tabOf(message({ teamId: 't1' }));
+    const dm = tabOf(message({ toNodeNum: 1, peerNodeNum: 42 }));
+    expect(team && chatTabKey(team)).toBe('team:t1');
+    expect(dm && chatTabKey(dm)).toBe('dm:42');
+    expect(tabOf(message({ channelIndex: 0 }))).toBeNull();
+  });
+
+  it('writes node numbers as people do', () => {
+    expect(formatNodeId(4044729068)).toBe('!f115aaec');
+    expect(formatNodeId(1)).toBe('!00000001');
   });
 
   it('shows a mark per delivery status', () => {

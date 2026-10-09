@@ -5,20 +5,23 @@
   >
     <div class="flex items-center gap-3">
       <span class="app-eyebrow">Operations</span>
-      <app-gateway-chip [gateway]="gateway.value()" />
-      @if (gateway.value()?.status === 'Offline') {
-        <p-button
-          label="Reconnect"
-          size="small"
-          [text]="true"
-          severity="secondary"
-          (onClick)="reconnect()"
-        >
-          <ng-template #icon><svg data-p-icon="refresh" aria-hidden="true"></svg></ng-template>
-        </p-button>
-      }
+      <app-gateway-chip [summary]="gatewaySummary.value()" (opened)="openPanel('gateways')" />
     </div>
     <div class="flex items-center gap-4 font-mono text-xs text-muted-color">
+      <p-button
+        label="My gateways"
+        size="small"
+        severity="secondary"
+        [outlined]="true"
+        (onClick)="openPanel('gateways')"
+      />
+      <p-button
+        label="Teams"
+        size="small"
+        severity="secondary"
+        [outlined]="true"
+        (onClick)="openPanel('teams')"
+      />
       <p-button
         label="Register node"
         size="small"
@@ -26,14 +29,10 @@
         [outlined]="true"
         (onClick)="registrationOpen.set(true)"
       />
-      <span>NODES {{ allNodes().length }}</span>
+      <span>{{ searching() ? 'FOUND' : 'IN VIEW' }} {{ listedTotal() }}</span>
       <span class="text-green-500">ONLINE {{ onlineCount() }}</span>
     </div>
   </header>
-
-  @if (actionError(); as message) {
-    <p-message severity="error" [text]="message" />
-  }
 
   <div class="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
     <!-- Left: layers and node list -->
@@ -52,6 +51,15 @@
           />
           Mesh nodes
         </label>
+        <label class="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            class="accent-(--p-primary-color)"
+            [checked]="showGateways()"
+            (change)="showGateways.set($any($event.target).checked)"
+          />
+          Gateways
+        </label>
       </fieldset>
 
       <p-iconfield class="w-full">
@@ -60,19 +68,34 @@
           pInputText
           type="search"
           class="w-full"
-          placeholder="Search name or !id"
-          aria-label="Search nodes"
+          placeholder="Search name or !id worldwide"
+          aria-label="Search nodes worldwide"
           [value]="searchText()"
           (input)="searchText.set($any($event.target).value)"
         />
       </p-iconfield>
+      <label class="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          class="accent-(--p-primary-color)"
+          [checked]="onlyMine()"
+          (change)="onlyMine.set($any($event.target).checked)"
+        />
+        Only my nodes
+      </label>
 
       @if (nodes.error()) {
         <p-message severity="error" text="Could not load the nodes." />
       }
 
+      <p class="app-eyebrow">
+        {{ searching() ? 'Search results (anywhere)' : 'Nodes in view' }}
+        @if (listedTotal() > listedNodes().length) {
+          · first {{ listedNodes().length }} of {{ listedTotal() }}
+        }
+      </p>
       <ul class="-mx-1 flex min-h-0 flex-1 flex-col overflow-y-auto" aria-label="Nodes">
-        @for (node of visibleNodes(); track node.nodeNum) {
+        @for (node of listedNodes(); track node.nodeNum) {
           <li>
             <button
               type="button"
@@ -107,11 +130,13 @@
           </li>
         } @empty {
           <li class="px-2 py-4 text-sm text-muted-color">
-            {{
-              nodes.isLoading()
-                ? 'Loading…'
-                : 'No nodes yet. They appear as soon as the gateway hears them.'
-            }}
+            @if (nodes.isLoading()) {
+              Loading…
+            } @else if (searching()) {
+              Nothing found.
+            } @else {
+              No nodes in this part of the map. Zoom out, search, or add a gateway nearby.
+            }
           </li>
         }
       </ul>
@@ -122,13 +147,15 @@
       class="relative min-h-[24rem] flex-1 overflow-hidden rounded-xl border border-content-border bg-content"
     >
       <app-map-view
-        [features]="mapFeatures()"
+        [features]="nodeFeatures()"
+        [markers]="gatewayMarkers()"
         [selectedId]="selectedFeatureId()"
         (featureClick)="onFeatureClick($event)"
+        (boundsChange)="onBoundsChange($event)"
       />
     </div>
 
-    <!-- Right: detail of the selected node -->
+    <!-- Right: detail of the selected node, or my gateways -->
     @if (selectedNodeNum(); as nodeNum) {
       <app-node-detail
         class="lg:w-80 lg:shrink-0"
@@ -137,12 +164,28 @@
         (closed)="selectedNodeNum.set(null)"
         (messageNode)="openConversation($event)"
         (registerNode)="registrationOpen.set(true)"
+        (showNode)="showNodeDetail($event)"
+      />
+    } @else if (sidePanel() === 'gateways') {
+      <app-gateways-panel
+        class="lg:w-80 lg:shrink-0"
+        [now]="now()"
+        (closed)="sidePanel.set(null)"
+        (showNode)="showNodeDetail($event)"
+      />
+    } @else if (sidePanel() === 'teams') {
+      <app-teams-panel
+        class="lg:w-80 lg:shrink-0"
+        [teams]="myTeams()"
+        (closed)="sidePanel.set(null)"
+        (changed)="teams.reload()"
+        (openChat)="openTeamChat($event)"
       />
     }
   </div>
 
-  <!-- Bottom: chat -->
-  <app-chat-drawer [nodes]="allNodes()" />
+  <!-- Bottom: team chat and direct messages -->
+  <app-chat-drawer [nodes]="listedNodes()" [teams]="myTeams()" />
 </section>
 
 <app-registration-dialog [(visible)]="registrationOpen" />

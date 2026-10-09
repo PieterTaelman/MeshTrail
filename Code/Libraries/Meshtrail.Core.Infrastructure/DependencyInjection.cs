@@ -4,12 +4,13 @@ using Meshtrail.Core.Infrastructure.Jobs;
 using Meshtrail.Core.Infrastructure.Mesh;
 using Meshtrail.Core.Infrastructure.Repositories;
 using Meshtrail.Core.Infrastructure.Persistence;
+using Meshtrail.Mesh.Radio;
+using Meshtrail.Mesh.Simulation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Meshtrail.Mesh.Radio;
 
 namespace Meshtrail.Core.Infrastructure;
 
@@ -28,9 +29,12 @@ public static class DependencyInjection
         services.AddScoped<ISampleRepository, SampleRepository>();
         services.AddScoped<IMeshNodeRepository, MeshNodeRepository>();
         services.AddScoped<IMeshGatewayRepository, MeshGatewayRepository>();
+        services.AddScoped<INodeReceptionRepository, NodeReceptionRepository>();
         services.AddScoped<INodeTracerouteRepository, NodeTracerouteRepository>();
         services.AddScoped<INodeRegistrationRepository, NodeRegistrationRepository>();
         services.AddScoped<IMeshMessageRepository, MeshMessageRepository>();
+        services.AddScoped<ITeamRepository, TeamRepository>();
+        services.AddSingleton<ITeamJoinCodeGenerator, TeamJoinCodeGenerator>();
 
         services.AddCronJob<SampleStatisticsJob>(configuration, SampleStatisticsJob.Name);
 
@@ -38,29 +42,50 @@ public static class DependencyInjection
     }
 
     /// <summary>
-    /// Registers the Meshtastic gateway: the radio chosen by Meshtastic:Gateway:Mode, the worker that runs it inside
-    /// this process, and the position retention job. Add the health check with <see cref="MeshGatewayHealthCheck"/>.
+    /// Registers the mesh platform: one transport per configured way in (MQTT broker, TCP node, simulator), the ingest
+    /// that processes what they receive, the outbox that sends, and the retention job. Add the health check with
+    /// <see cref="MeshGatewayHealthCheck"/>.
     /// </summary>
     public static IServiceCollection AddMesh(this IServiceCollection services, IConfiguration configuration)
     {
-        services.Configure<MeshRadioOptions>(configuration.GetSection(MeshRadioOptions.SectionName));
         services.Configure<MeshOutboundOptions>(configuration.GetSection(MeshOutboundOptions.SectionName));
+        services.Configure<MeshIngestOptions>(configuration.GetSection(MeshIngestOptions.SectionName));
         services.Configure<MeshRetentionOptions>(configuration.GetSection(MeshRetentionOptions.SectionName));
+        services.Configure<MeshMqttOptions>(configuration.GetSection(MeshMqttOptions.SectionName));
 
-        services.AddSingleton<IMeshRadio>(provider =>
+        if (configuration.GetSection(MeshMqttOptions.SectionName).Get<MeshMqttOptions>() is { Enabled: true })
         {
-            var options = provider.GetRequiredService<IOptions<MeshRadioOptions>>().Value;
-            var time = provider.GetRequiredService<TimeProvider>();
-            return options.Mode == MeshRadioMode.Simulated
-                ? new SimulatedMeshRadio(options, time, provider.GetRequiredService<ILogger<SimulatedMeshRadio>>())
-                : new TcpMeshRadio(options, time, provider.GetRequiredService<ILogger<TcpMeshRadio>>());
-        });
+            services.AddSingleton<MqttGatewayTransport>();
+            services.AddSingleton<IGatewayTransport>(provider => provider.GetRequiredService<MqttGatewayTransport>());
+        }
 
-        services.AddSingleton<MeshGatewayService>();
+        var tcp = configuration.GetSection(MeshRadioOptions.SectionName).Get<MeshRadioOptions>() ?? new MeshRadioOptions();
+        if (tcp.IsEnabled)
+        {
+            services.AddSingleton<IGatewayTransport>(provider => new TcpGatewayTransport(
+                new TcpMeshRadio(tcp, provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<ILogger<TcpMeshRadio>>()),
+                provider.GetRequiredService<TimeProvider>(),
+                provider.GetRequiredService<ILogger<TcpGatewayTransport>>()));
+        }
+
+        var simulator = configuration.GetSection(SimulatedMeshOptions.SectionName).Get<SimulatedMeshOptions>() ?? new SimulatedMeshOptions();
+        if (simulator.Enabled)
+        {
+            services.AddSingleton(provider => new SimulatedMesh(
+                simulator, provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<ILogger<SimulatedMesh>>()));
+            services.AddSingleton<SimulatedGatewayTransport>();
+            services.AddSingleton<IGatewayTransport>(provider => provider.GetRequiredService<SimulatedGatewayTransport>());
+        }
+
+        services.AddSingleton<GatewayInbox>();
+        services.AddSingleton<MeshOutbox>();
+        services.AddSingleton<IMeshOutbox>(provider => provider.GetRequiredService<MeshOutbox>());
+        services.AddSingleton<IGatewaySetup, GatewaySetup>();
+        services.AddSingleton<IGatewayCredentialGenerator, GatewayCredentialGenerator>();
         services.AddSingleton<IContactUrlParser, ContactUrlParser>();
         services.AddSingleton<IVerificationCodeGenerator, RandomVerificationCodeGenerator>();
-        services.AddSingleton<IMeshGateway>(provider => provider.GetRequiredService<MeshGatewayService>());
-        services.AddHostedService<MeshGatewayWorker>();
+        services.AddHostedService<MeshIngestService>();
+        services.AddHostedService<MeshMaintenanceService>();
 
         services.AddCronJob<NodePositionRetentionJob>(configuration, NodePositionRetentionJob.Name);
         return services;

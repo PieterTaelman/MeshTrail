@@ -1,0 +1,138 @@
+<aside
+  class="flex h-full flex-col gap-4 overflow-y-auto rounded-xl border border-content-border bg-content p-4"
+  aria-label="Teams"
+>
+  <header class="flex items-start justify-between gap-2">
+    <div>
+      <span class="app-eyebrow">Teams</span>
+      <p class="text-xs text-muted-color">
+        A team chats on its own Meshtastic channel. Put the same channel (name and key) on the
+        team's nodes and on a gateway. Only members can read the team chat.
+      </p>
+    </div>
+    <p-button
+      [text]="true"
+      [rounded]="true"
+      severity="secondary"
+      size="small"
+      ariaLabel="Close teams"
+      (onClick)="closed.emit()"
+    >
+      <ng-template #icon><svg data-p-icon="times" aria-hidden="true"></svg></ng-template>
+    </p-button>
+  </header>
+
+  @if (error(); as message) {
+    <p-message severity="error" [text]="message" />
+  }
+
+  <ul class="flex flex-col gap-2" aria-label="My teams">
+    @for (team of teams(); track team.id) {
+      <li class="flex flex-col gap-1 rounded-lg border border-content-border p-2 text-sm">
+        <div class="flex items-center gap-2">
+          <span class="min-w-0 flex-1 truncate font-semibold">{{ team.name }}</span>
+          <span class="font-mono text-xs text-muted-color">{{ team.myRole.toUpperCase() }}</span>
+        </div>
+        <p class="font-mono text-xs text-muted-color">
+          channel {{ team.channelName }} · {{ team.members.length }} member{{
+            team.members.length === 1 ? '' : 's'
+          }}
+        </p>
+        <p class="flex items-center gap-2 font-mono text-xs">
+          <span class="text-muted-color">join code</span> {{ team.joinCode }}
+          <button type="button" class="text-primary" (click)="copy(team)">
+            {{ copied() === team.id ? 'copied' : 'copy' }}
+          </button>
+        </p>
+        @if (team.gatewaysOnline === 0) {
+          <p class="text-xs text-amber-500">
+            No online gateway carries "{{ team.channelName }}" yet: team messages cannot go out.
+          </p>
+        } @else {
+          <p class="text-xs text-green-500">
+            {{ team.gatewaysOnline }} gateway{{ team.gatewaysOnline === 1 ? '' : 's' }} online on
+            this channel
+          </p>
+        }
+        <p class="text-xs text-muted-color">
+          {{ team.members.map((member) => member.userName).join(', ') }}
+        </p>
+        <div class="flex flex-wrap justify-end gap-1">
+          <p-button label="Chat" size="small" [text]="true" (onClick)="openChat.emit(team.id)" />
+          @if (team.myRole === 'Owner') {
+            <p-button
+              label="New code"
+              size="small"
+              [text]="true"
+              severity="secondary"
+              [disabled]="busy()"
+              (onClick)="renewCode(team)"
+            />
+          }
+          <p-button
+            [label]="confirmingLeave() === team.id ? 'Really leave?' : 'Leave'"
+            size="small"
+            [text]="true"
+            [severity]="confirmingLeave() === team.id ? 'danger' : 'secondary'"
+            [disabled]="busy()"
+            (onClick)="leave(team)"
+          />
+        </div>
+      </li>
+    } @empty {
+      <li class="text-sm text-muted-color">You are not in a team yet.</li>
+    }
+  </ul>
+
+  <form
+    class="flex flex-col gap-2 border-t border-content-border pt-3"
+    (submit)="$event.preventDefault(); join()"
+    aria-label="Join a team"
+  >
+    <span class="app-eyebrow">Join a team</span>
+    <label class="flex flex-col gap-1 text-xs text-muted-color">
+      Join code
+      <input
+        pInputText
+        class="font-mono uppercase"
+        maxlength="16"
+        [value]="code()"
+        (input)="code.set($any($event.target).value)"
+      />
+    </label>
+    <p-button type="submit" label="Join" size="small" [disabled]="busy() || !code().trim()" />
+  </form>
+
+  <form
+    class="flex flex-col gap-2 border-t border-content-border pt-3"
+    (submit)="$event.preventDefault(); create()"
+    aria-label="Create a team"
+  >
+    <span class="app-eyebrow">Create a team</span>
+    <label class="flex flex-col gap-1 text-xs text-muted-color">
+      Team name
+      <input
+        pInputText
+        maxlength="50"
+        [value]="name()"
+        (input)="name.set($any($event.target).value)"
+      />
+    </label>
+    <label class="flex flex-col gap-1 text-xs text-muted-color">
+      Channel name (max {{ channelMaxLength }}, not LongFast or another public channel)
+      <input
+        pInputText
+        class="font-mono"
+        [attr.maxlength]="channelMaxLength"
+        [value]="channel()"
+        (input)="channel.set($any($event.target).value)"
+      />
+    </label>
+    <p-button
+      type="submit"
+      label="Create"
+      size="small"
+      [disabled]="busy() || !name().trim() || !channel().trim()"
+    />
+  </form>
+</aside>

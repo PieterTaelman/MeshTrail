@@ -2,6 +2,8 @@ import {
   LAST_HEARD_COLORS,
   formatAge,
   formatBattery,
+  gatewaySummaryState,
+  inBox,
   isOnline,
   lastHeardColor,
   upsertNode,
@@ -38,6 +40,22 @@ describe('mesh-format', () => {
     expect(formatBattery(101, true)).toBe('External power');
     expect(formatBattery(80, false)).toBe('80 %');
     expect(formatBattery(null, false)).toBe('—');
+  });
+
+  it('knows whether a point is in the map view, also across the 180° meridian', () => {
+    expect(inBox([2, 49, 7, 52], 50.8, 4.3)).toBe(true);
+    expect(inBox([2, 49, 7, 52], 48, 4.3)).toBe(false);
+    expect(inBox([170, -10, -170, 10], 0, 175)).toBe(true);
+    expect(inBox([170, -10, -170, 10], 0, 0)).toBe(false);
+    expect(inBox(null, 0, 0)).toBe(false);
+  });
+
+  it('summarises the gateways for the top-bar chip', () => {
+    expect(gatewaySummaryState(undefined)).toBe('none');
+    expect(gatewaySummaryState({ online: 0, total: 0 })).toBe('none');
+    expect(gatewaySummaryState({ online: 3, total: 3 })).toBe('ok');
+    expect(gatewaySummaryState({ online: 1, total: 3 })).toBe('partial');
+    expect(gatewaySummaryState({ online: 0, total: 2 })).toBe('down');
   });
 
   it('updates a known node in place and adds new ones, most recently heard first', () => {

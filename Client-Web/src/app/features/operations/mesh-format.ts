@@ -1,4 +1,12 @@
-import { MeshMessage, MeshNode, MessageStatus, PagedResult } from './mesh.models';
+import {
+  BoundingBox,
+  GatewayState,
+  GatewaySummary,
+  MeshMessage,
+  MeshNode,
+  MessageStatus,
+  PagedResult,
+} from './mesh.models';
 
 // Small pure helpers for showing mesh data. Kept out of components so they are easy to unit test.
 
@@ -96,18 +104,69 @@ export function utf8ByteCount(text: string): number {
   return new TextEncoder().encode(text).length;
 }
 
-/** A chat tab: one channel, or the direct-message conversation with one node. */
-export type ChatTab = { kind: 'channel'; channel: number } | { kind: 'dm'; nodeNum: number };
+/** A chat tab: one team's chat, or the direct-message conversation with one node. */
+export type ChatTab = { kind: 'team'; teamId: string } | { kind: 'dm'; nodeNum: number };
 
 export function chatTabKey(tab: ChatTab): string {
-  return tab.kind === 'channel' ? `ch:${tab.channel}` : `dm:${tab.nodeNum}`;
+  return tab.kind === 'team' ? `team:${tab.teamId}` : `dm:${tab.nodeNum}`;
 }
 
-/** The tab a message belongs in. */
-export function tabOf(message: MeshMessage): ChatTab {
+/**
+ * The tab a message belongs in: its team, the conversation with the other node, or null for a channel message
+ * outside a team (there is no worldwide channel tab).
+ */
+export function tabOf(message: MeshMessage): ChatTab | null {
+  if (message.teamId) {
+    return { kind: 'team', teamId: message.teamId };
+  }
   return message.toNodeNum === null || message.peerNodeNum === null
-    ? { kind: 'channel', channel: message.channelIndex }
+    ? null
     : { kind: 'dm', nodeNum: message.peerNodeNum };
+}
+
+/** "!" + 8 hex digits, as people write node numbers. */
+export function formatNodeId(nodeNum: number): string {
+  return `!${nodeNum.toString(16).padStart(8, '0')}`;
+}
+
+/** Is the point inside the map view? Handles views that cross the 180° meridian. */
+export function inBox(box: BoundingBox | null, latitude: number, longitude: number): boolean {
+  if (!box) {
+    return false;
+  }
+  const [west, south, east, north] = box;
+  const inLatitude = latitude >= south && latitude <= north;
+  return (
+    inLatitude &&
+    (west <= east ? longitude >= west && longitude <= east : longitude >= west || longitude <= east)
+  );
+}
+
+/** Colour of a gateway by status (map ring and status dot). */
+export function gatewayColor(status: GatewayState): string {
+  switch (status) {
+    case 'Online':
+      return '#22c55e';
+    case 'Pending':
+      return '#eab308';
+    case 'Offline':
+      return '#ef4444';
+    default:
+      return '#64748b';
+  }
+}
+
+/** Overall state of the gateways chip: all online, some offline, none online, or no gateways at all. */
+export function gatewaySummaryState(
+  summary: GatewaySummary | undefined,
+): 'ok' | 'partial' | 'down' | 'none' {
+  if (!summary || summary.total === 0) {
+    return 'none';
+  }
+  if (summary.online === summary.total) {
+    return 'ok';
+  }
+  return summary.online === 0 ? 'down' : 'partial';
 }
 
 /** Short status mark shown next to our own messages. */

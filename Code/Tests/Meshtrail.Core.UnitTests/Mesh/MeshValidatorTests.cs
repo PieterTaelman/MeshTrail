@@ -43,6 +43,20 @@ public sealed class MeshValidatorTests
     }
 
     [TestMethod]
+    [DataRow("2.5,49.5,6.4,51.5", null, true)]
+    [DataRow("2.5,52,6.4,51", null, false)]
+    [DataRow(null, "me", true)]
+    [DataRow(null, "someone", false)]
+    public void GetNodes_ChecksBboxAndOwner(string? bbox, string? owner, bool valid)
+    {
+        // Act
+        var result = new GetNodesValidator().Validate(new GetNodesQuery(new NodeListRequest { Bbox = bbox, Owner = owner }));
+
+        // Assert
+        result.IsValid.ShouldBe(valid);
+    }
+
+    [TestMethod]
     [DataRow("nodes", null, true)]
     [DataRow("NODES, nodes", null, true)]
     [DataRow("nodes,unicorns", null, false)]
@@ -62,6 +76,20 @@ public sealed class MeshValidatorTests
 
         // Assert
         result.IsValid.ShouldBe(valid);
+    }
+
+    [TestMethod]
+    [DataRow(0, 175, true)]
+    [DataRow(0, -175, true)]
+    [DataRow(0, 0, false)]
+    [DataRow(20, 175, false)]
+    public void BoundingBox_ContainsAcrossTheDateLine(double latitude, double longitude, bool expected)
+    {
+        // Arrange
+        BoundingBox.TryParse("170,-10,-170,10", out var box);
+
+        // Act + Assert
+        box.Contains(latitude, longitude).ShouldBe(expected);
     }
 
     [TestMethod]

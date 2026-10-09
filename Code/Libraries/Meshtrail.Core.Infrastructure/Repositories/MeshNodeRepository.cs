@@ -32,6 +32,18 @@ internal sealed class MeshNodeRepository(MeshtrailDbContext dbContext) : IMeshNo
         return node;
     }
 
+    public async Task<IReadOnlyList<MeshNode>> GetManyAsync(IReadOnlyCollection<uint> nodeNums, CancellationToken cancellationToken)
+    {
+        if (nodeNums.Count == 0)
+        {
+            return [];
+        }
+
+        var wanted = nodeNums.Select(nodeNum => (long)nodeNum).ToList();
+        var rows = await Nodes.AsNoTracking().Where(node => wanted.Contains(node.NodeNum)).ToListAsync(cancellationToken);
+        return [.. rows.Select(row => row.ToDomain())];
+    }
+
     public Task AddAsync(MeshNode node, CancellationToken cancellationToken)
     {
         var row = node.ToDb();
@@ -65,29 +77,39 @@ internal sealed class MeshNodeRepository(MeshtrailDbContext dbContext) : IMeshNo
 
     public async Task SaveChangesAsync(CancellationToken cancellationToken) => await dbContext.SaveChangesAsync(cancellationToken);
 
-    public async Task<PagedResult<MeshNode>> GetPageAsync(NodeListRequest request, DateTimeOffset onlineSince, CancellationToken cancellationToken)
+    public async Task<PagedResult<MeshNode>> GetPageAsync(NodeFilter filter, int page, int pageSize, CancellationToken cancellationToken)
     {
         var query = Nodes.AsNoTracking();
 
-        if (!string.IsNullOrWhiteSpace(request.Search))
+        if (filter.Search is { } search)
         {
-            var search = request.Search.Trim();
             query = query.Where(node => node.LongName.Contains(search) || node.ShortName.Contains(search) || node.NodeId.Contains(search));
         }
 
-        query = request.Online switch
+        if (filter.Box is { } box)
+        {
+            query = InBox(query, box);
+        }
+
+        var onlineSince = filter.OnlineSince;
+        query = filter.Online switch
         {
             true => query.Where(node => node.LastHeardAt >= onlineSince),
             false => query.Where(node => node.LastHeardAt == null || node.LastHeardAt < onlineSince),
             null => query,
         };
 
-        if (request.Registered is { } registered)
+        var verified = dbContext.Set<DbNodeRegistration>().Where(registration => registration.Status == nameof(RegistrationStatus.Verified));
+        if (filter.Registered is { } registered)
         {
-            var verified = dbContext.Set<DbNodeRegistration>()
-                .Where(registration => registration.Status == nameof(RegistrationStatus.Verified))
-                .Select(registration => registration.NodeNum);
-            query = registered ? query.Where(node => verified.Contains(node.NodeNum)) : query.Where(node => !verified.Contains(node.NodeNum));
+            var verifiedNodes = verified.Select(registration => registration.NodeNum);
+            query = registered ? query.Where(node => verifiedNodes.Contains(node.NodeNum)) : query.Where(node => !verifiedNodes.Contains(node.NodeNum));
+        }
+
+        if (filter.OwnerUserId is { } ownerUserId)
+        {
+            var mine = verified.Where(registration => registration.UserId == ownerUserId).Select(registration => registration.NodeNum);
+            query = query.Where(node => mine.Contains(node.NodeNum));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
@@ -97,28 +119,35 @@ internal sealed class MeshNodeRepository(MeshtrailDbContext dbContext) : IMeshNo
             .OrderByDescending(node => node.LastHeardAt != null)
             .ThenByDescending(node => node.LastHeardAt)
             .ThenBy(node => node.NodeNum)
-            .Skip((request.Page - 1) * request.PageSize)
-            .Take(request.PageSize)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        return new PagedResult<MeshNode>([.. rows.Select(row => row.ToDomain())], totalCount, request.Page, request.PageSize);
+        return new PagedResult<MeshNode>([.. rows.Select(row => row.ToDomain())], totalCount, page, pageSize);
     }
 
-    public async Task<IReadOnlyList<MeshNode>> GetWithPositionAsync(BoundingBox? box, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<MeshNode>> GetWithPositionAsync(BoundingBox? box, int limit, CancellationToken cancellationToken)
     {
         var query = Nodes.AsNoTracking().Where(node => node.Latitude != null && node.Longitude != null && node.PositionTime != null);
-
         if (box is not null)
         {
-            query = query.Where(node => node.Latitude >= box.South && node.Latitude <= box.North);
-
-            // A box crossing the 180° meridian has West > East.
-            query = box.West <= box.East
-                ? query.Where(node => node.Longitude >= box.West && node.Longitude <= box.East)
-                : query.Where(node => node.Longitude >= box.West || node.Longitude <= box.East);
+            query = InBox(query, box);
         }
 
-        var rows = await query.ToListAsync(cancellationToken);
+        var rows = await query
+            .OrderByDescending(node => node.LastHeardAt)
+            .ThenBy(node => node.NodeNum)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
         return [.. rows.Select(row => row.ToDomain())];
+    }
+
+    /// <summary>Nodes whose last position is inside the box. A box crossing the 180° meridian has West &gt; East.</summary>
+    private static IQueryable<DbMeshNode> InBox(IQueryable<DbMeshNode> query, BoundingBox box)
+    {
+        query = query.Where(node => node.Latitude >= box.South && node.Latitude <= box.North);
+        return box.West <= box.East
+            ? query.Where(node => node.Longitude >= box.West && node.Longitude <= box.East)
+            : query.Where(node => node.Longitude >= box.West || node.Longitude <= box.East);
     }
 }

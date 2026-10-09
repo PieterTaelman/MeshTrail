@@ -5,8 +5,12 @@
 
 dbo/Tables/Samples.sql
 dbo/Tables/MeshGateways.sql
+dbo/Tables/GatewayChannels.sql
 dbo/Tables/MeshNodes.sql
+dbo/Tables/NodeReceptions.sql
 dbo/Tables/NodePositions.sql
 dbo/Tables/NodeTraceroutes.sql
 dbo/Tables/NodeRegistrations.sql
+dbo/Tables/Teams.sql
+dbo/Tables/TeamMembers.sql
 dbo/Tables/MeshMessages.sql

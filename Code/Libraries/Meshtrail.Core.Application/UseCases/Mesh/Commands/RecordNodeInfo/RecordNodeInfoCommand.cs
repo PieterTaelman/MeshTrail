@@ -2,9 +2,10 @@ using Mediator;
 
 namespace Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordNodeInfo;
 
-/// <summary>One entry of the gateway's node database (sent right after connecting).</summary>
+/// <summary>One entry of a TCP gateway's node database (sent right after connecting).</summary>
 public sealed record RecordNodeInfoCommand(
     uint NodeNum,
+    uint GatewayNodeNum,
     RadioUser? User,
     RadioPosition? Position,
     RadioTelemetry? Telemetry,

@@ -7,11 +7,10 @@ namespace Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordRoutingResult;
 
 /// <summary>
 /// Turns a delivery report into Acked or Failed. A direct message only counts as delivered when the destination
-/// itself acknowledged; an "implicit" ack from a relay or our own gateway only means it left, so it stays Sent.
+/// itself acknowledged; an "implicit" ack from a relay or the gateway only means it left, so it stays Sent.
 /// </summary>
 public sealed class RecordRoutingResultHandler(
     IMeshMessageRepository messages,
-    IMeshGatewayRepository gateways,
     TimeProvider timeProvider,
     IPublisher publisher) : ICommandHandler<RecordRoutingResultCommand>
 {
@@ -39,8 +38,7 @@ public sealed class RecordRoutingResultHandler(
             if (message.Status == MessageStatus.Queued)
             {
                 // The report beat our own "sent" bookkeeping; it was obviously sent.
-                var gateway = await gateways.GetAsync(MeshGateway.PrimaryKey, cancellationToken);
-                message.MarkSent(gateway?.NodeNum, now);
+                message.MarkSent(now);
             }
 
             message.MarkAcked(now);

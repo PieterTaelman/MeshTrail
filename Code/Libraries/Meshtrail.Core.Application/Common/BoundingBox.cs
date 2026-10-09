@@ -5,6 +5,11 @@ namespace Meshtrail.Core.Application.Common;
 /// <summary>A map rectangle in degrees. West may be greater than East when the box crosses the 180° meridian.</summary>
 public sealed record BoundingBox(double West, double South, double East, double North)
 {
+    /// <summary>Is the point inside? Handles boxes that cross the 180° meridian.</summary>
+    public bool Contains(double latitude, double longitude) =>
+        latitude >= South && latitude <= North
+        && (West <= East ? longitude >= West && longitude <= East : longitude >= West || longitude <= East);
+
     /// <summary>Parses "west,south,east,north" (the order map libraries use). Returns false for anything else.</summary>
     public static bool TryParse(string? text, out BoundingBox box)
     {

@@ -5,11 +5,8 @@ using Meshtrail.Core.Domain.Mesh;
 
 namespace Meshtrail.Core.Application.UseCases.Mesh.Commands.MarkMessageSent;
 
-public sealed class MarkMessageSentHandler(
-    IMeshMessageRepository messages,
-    IMeshGatewayRepository gateways,
-    TimeProvider timeProvider,
-    IPublisher publisher) : ICommandHandler<MarkMessageSentCommand>
+public sealed class MarkMessageSentHandler(IMeshMessageRepository messages, TimeProvider timeProvider, IPublisher publisher)
+    : ICommandHandler<MarkMessageSentCommand>
 {
     public async ValueTask<Unit> Handle(MarkMessageSentCommand command, CancellationToken cancellationToken)
     {
@@ -21,8 +18,7 @@ public sealed class MarkMessageSentHandler(
             return Unit.Value;
         }
 
-        var gateway = await gateways.GetAsync(MeshGateway.PrimaryKey, cancellationToken);
-        message.MarkSent(gateway?.NodeNum, timeProvider.GetUtcNow());
+        message.MarkSent(timeProvider.GetUtcNow());
         await messages.UpdateAsync(message, cancellationToken);
         await messages.SaveChangesAsync(cancellationToken);
         await publisher.Publish(new MessageStatusChangedNotification(message.ToDto()), cancellationToken);

@@ -11,6 +11,10 @@ internal sealed class DbMeshMessage
 
     public int ChannelIndex { get; set; }
 
+    public string? ChannelName { get; set; }
+
+    public long? GatewayNodeNum { get; set; }
+
     public long? FromNodeNum { get; set; }
 
     public long? ToNodeNum { get; set; }
@@ -31,7 +35,11 @@ internal sealed class DbMeshMessage
 
     public DateTimeOffset CreatedAt { get; set; }
 
+    public string? CreatedById { get; set; }
+
     public string? CreatedBy { get; set; }
+
+    public Guid? TeamId { get; set; }
 
     public DateTimeOffset? SentAt { get; set; }
 

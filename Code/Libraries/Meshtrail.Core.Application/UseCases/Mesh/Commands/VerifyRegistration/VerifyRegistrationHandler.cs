@@ -8,15 +8,15 @@ using Meshtrail.Core.Domain.Mesh;
 namespace Meshtrail.Core.Application.UseCases.Mesh.Commands.VerifyRegistration;
 
 /// <summary>
-/// Check the code. Every attempt is saved (also wrong ones) before answering. On success the gateway gets the node's
-/// public key (add_contact), so direct messages to it are encrypted end to end.
+/// Check the code. Every attempt is saved (also wrong ones) before answering. On success every TCP gateway gets the
+/// node's public key (add_contact), so its direct messages to the node are encrypted end to end. (MQTT gateways
+/// cannot do that for us: the packet is not theirs.)
 /// </summary>
 public sealed class VerifyRegistrationHandler(
     INodeRegistrationRepository registrations,
-    IMeshNodeRepository nodes,
-    IMeshGatewayRepository gateways,
+    MeshNodeStores stores,
     IMeshMessageRepository messages,
-    IMeshGateway meshGateway,
+    IMeshOutbox outbox,
     ICurrentUser currentUser,
     TimeProvider timeProvider,
     IPublisher publisher) : ICommandHandler<VerifyRegistrationCommand, RegistrationDto>
@@ -44,12 +44,18 @@ public sealed class VerifyRegistrationHandler(
                 throw new DomainException("Too many wrong codes. Register the node again to get a new code.");
         }
 
-        meshGateway.Enqueue(new AddContactRequest(
-            registration.NodeNum, meshGateway.NewPacketId(), registration.LongName, registration.ShortName, registration.PublicKey));
-
-        if (await nodes.GetAsync(registration.NodeNum, cancellationToken) is { } node)
+        foreach (var gateway in await stores.Gateways.GetBoundAsync(cancellationToken))
         {
-            await MeshNodeUpdates.PublishAsync(gateways, registrations, publisher, node, now, cancellationToken);
+            if (gateway is { Transport: GatewayTransport.Tcp, CanSend: true })
+            {
+                outbox.Enqueue(new AddContactRequest(
+                    gateway.ToRoute(), registration.NodeNum, outbox.NewPacketId(), registration.LongName, registration.ShortName, registration.PublicKey));
+            }
+        }
+
+        if (await stores.Nodes.GetAsync(registration.NodeNum, cancellationToken) is { } node)
+        {
+            await MeshNodeUpdates.PublishAsync(stores, publisher, node, now, cancellationToken);
         }
 
         return registration.ToDto(await VerificationStatusAsync(messages, registration, cancellationToken));

@@ -7,7 +7,11 @@ CREATE TABLE [dbo].[MeshMessages]
     -- Text | Verification (verification codes are never shown in the chat)
     [Kind]          NVARCHAR(20)      NOT NULL,
     [ChannelIndex]  INT               NOT NULL,
-    -- Sender; NULL for our own messages before the gateway number is known.
+    -- Channel name from the gateway's MQTT topic (NULL over TCP).
+    [ChannelName]   NVARCHAR(30)      NULL,
+    -- Node number of the gateway the message went out through (outbound) or first arrived through (inbound).
+    [GatewayNodeNum] BIGINT           NULL,
+    -- Sender on the air: the node, or for our own messages our virtual node (MQTT) or the TCP gateway.
     [FromNodeNum]   BIGINT            NULL,
     -- NULL = broadcast to the channel; otherwise a direct message to this node.
     [ToNodeNum]     BIGINT            NULL,
@@ -21,9 +25,13 @@ CREATE TABLE [dbo].[MeshMessages]
     [Rssi]          INT               NULL,
     [HopsAway]      INT               NULL,
     [CreatedAt]     DATETIMEOFFSET(7) NOT NULL,
+    -- User id of the author of an outbound message: decides who may read the conversation.
+    [CreatedById]   NVARCHAR(256)     NULL,
     [CreatedBy]     NVARCHAR(256)     NULL,
     [SentAt]        DATETIMEOFFSET(7) NULL,
     [AckedAt]       DATETIMEOFFSET(7) NULL,
+    -- Team chat: the team whose channel the message is on (no FK: a message outlives a team that ended).
+    [TeamId]        UNIQUEIDENTIFIER  NULL,
     CONSTRAINT [PK_MeshMessages] PRIMARY KEY NONCLUSTERED ([Id])
 );
 GO
@@ -31,9 +39,9 @@ GO
 CREATE CLUSTERED INDEX [IX_MeshMessages_CreatedAt] ON [dbo].[MeshMessages] ([CreatedAt]);
 GO
 
--- Channel tab: broadcasts on one channel, newest first.
-CREATE NONCLUSTERED INDEX [IX_MeshMessages_Channel_CreatedAt] ON [dbo].[MeshMessages] ([ChannelIndex], [CreatedAt])
-    WHERE [ToNodeNum] IS NULL;
+-- Team tab: one team's chat, newest first.
+CREATE NONCLUSTERED INDEX [IX_MeshMessages_Team_CreatedAt] ON [dbo].[MeshMessages] ([TeamId], [CreatedAt])
+    WHERE [TeamId] IS NOT NULL;
 GO
 
 -- Direct-message tab: conversation with one node (we look up both directions).

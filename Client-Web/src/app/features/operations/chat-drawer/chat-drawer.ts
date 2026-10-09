@@ -1,5 +1,14 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  computed,
+  inject,
+  input,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { rxResource, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonModule } from '@openng/optimus-ui/button';
 import { InputTextModule } from '@openng/optimus-ui/inputtext';
@@ -11,19 +20,21 @@ import { MeshApi } from '../mesh.api';
 import {
   ChatTab,
   chatTabKey,
+  formatNodeId,
   statusMark,
   tabOf,
   upsertMessage,
   utf8ByteCount,
 } from '../mesh-format';
-import { MESH_EVENTS, MESSAGE_MAX_BYTES, MeshMessage, MeshNode } from '../mesh.models';
+import { MESH_EVENTS, MESSAGE_MAX_BYTES, MeshMessage, MeshNode, Team } from '../mesh.models';
 
 const PAGE_SIZE = 50;
-const CHANNEL_TAB: ChatTab = { kind: 'channel', channel: 0 };
 
 /**
- * Bottom chat drawer: the primary channel plus one tab per direct-message conversation. New messages and status
- * changes arrive via SignalR; tabs that are not open count unread messages.
+ * Bottom chat drawer: one tab per team (its own Meshtastic channel, sent through every gateway that carries it) and
+ * one per direct-message conversation (sent through the gateway that heard the node best). There is no worldwide
+ * channel. New messages and status changes arrive via SignalR (only for the people involved); tabs that are not open
+ * count unread messages.
  */
 @Component({
   selector: 'app-chat-drawer',
@@ -37,15 +48,38 @@ export class ChatDrawer {
 
   /** Known nodes, to show names instead of ids. */
   readonly nodes = input<MeshNode[]>([]);
+  /** My teams: each always has a tab. */
+  readonly teams = input<Team[]>([]);
+
+  private readonly draftInput = viewChild<ElementRef<HTMLInputElement>>('draftInput');
 
   protected readonly maxBytes = MESSAGE_MAX_BYTES;
   protected readonly expanded = signal(false);
-  protected readonly tabs = signal<ChatTab[]>([CHANNEL_TAB]);
-  protected readonly activeTab = signal<ChatTab>(CHANNEL_TAB);
+  /** Direct-message conversations that are open. */
+  private readonly conversations = signal<number[]>([]);
+  private readonly selected = signal<ChatTab | null>(null);
   protected readonly unread = signal<Record<string, number>>({});
+  /** Names seen when a conversation was opened, so a tab keeps its name when the node leaves the map view. */
+  private readonly knownNames = signal<Record<number, string>>({});
   protected readonly draft = signal('');
   protected readonly sending = signal(false);
   protected readonly error = signal<string | null>(null);
+
+  protected readonly tabs = computed<ChatTab[]>(() => [
+    ...this.teams().map((team): ChatTab => ({ kind: 'team', teamId: team.id })),
+    ...this.conversations().map((nodeNum): ChatTab => ({ kind: 'dm', nodeNum })),
+  ]);
+
+  /** The selected tab, or the first one when nothing (valid) is selected. */
+  protected readonly activeTab = computed<ChatTab | null>(() => {
+    const selected = this.selected();
+    const tabs = this.tabs();
+    return (
+      tabs.find((tab) => selected !== null && chatTabKey(tab) === chatTabKey(selected)) ??
+      tabs[0] ??
+      null
+    );
+  });
 
   protected readonly draftBytes = computed(() => utf8ByteCount(this.draft().trim()));
   protected readonly tooLong = computed(() => this.draftBytes() > MESSAGE_MAX_BYTES);
@@ -54,11 +88,14 @@ export class ChatDrawer {
   );
 
   protected readonly messages = rxResource({
-    params: () => (this.expanded() ? this.activeTab() : undefined),
+    params: () => {
+      const tab = this.activeTab();
+      return this.expanded() && tab ? tab : undefined;
+    },
     stream: ({ params: tab }) =>
       this.api.getMessages(
-        tab.kind === 'channel'
-          ? { page: 1, pageSize: PAGE_SIZE, channel: tab.channel }
+        tab.kind === 'team'
+          ? { page: 1, pageSize: PAGE_SIZE, team: tab.teamId }
           : { page: 1, pageSize: PAGE_SIZE, node: tab.nodeNum },
       ),
   });
@@ -68,9 +105,16 @@ export class ChatDrawer {
     [...(this.messages.value()?.items ?? [])].reverse(),
   );
 
-  private readonly nodeNames = computed(
-    () => new Map(this.nodes().map((node) => [node.nodeNum, node.longName])),
-  );
+  private readonly nodeNames = computed<Record<number, string>>(() => ({
+    ...this.knownNames(),
+    ...Object.fromEntries(this.nodes().map((node) => [node.nodeNum, node.longName])),
+  }));
+
+  /** The active team, to warn when no gateway carries its channel. */
+  protected readonly activeTeam = computed(() => {
+    const tab = this.activeTab();
+    return tab?.kind === 'team' ? this.teams().find((team) => team.id === tab.teamId) : undefined;
+  });
 
   protected readonly chatTabKey = chatTabKey;
   protected readonly statusMark = statusMark;
@@ -87,14 +131,23 @@ export class ChatDrawer {
 
   /** Opens (or creates) the direct-message tab for a node, e.g. from the node detail panel. */
   openConversation(nodeNum: number): void {
-    const tab: ChatTab = { kind: 'dm', nodeNum };
-    this.ensureTab(tab);
-    this.select(tab);
+    const name = this.nodes().find((node) => node.nodeNum === nodeNum)?.longName;
+    if (name) {
+      this.knownNames.update((names) => ({ ...names, [nodeNum]: name }));
+    }
+    this.ensureConversation(nodeNum);
+    this.select({ kind: 'dm', nodeNum });
+    this.expanded.set(true);
+  }
+
+  /** Opens a team's tab, e.g. from the teams panel. */
+  openTeam(teamId: string): void {
+    this.select({ kind: 'team', teamId });
     this.expanded.set(true);
   }
 
   protected select(tab: ChatTab): void {
-    this.activeTab.set(tab);
+    this.selected.set(tab);
     this.error.set(null);
     this.unread.update((counts) => {
       const rest = { ...counts };
@@ -105,21 +158,21 @@ export class ChatDrawer {
 
   protected close(tab: ChatTab, event: Event): void {
     event.stopPropagation();
-    const key = chatTabKey(tab);
-    this.tabs.update((tabs) => tabs.filter((item) => chatTabKey(item) !== key));
-    if (chatTabKey(this.activeTab()) === key) {
-      this.select(CHANNEL_TAB);
+    if (tab.kind === 'dm') {
+      this.conversations.update((nodes) => nodes.filter((nodeNum) => nodeNum !== tab.nodeNum));
     }
   }
 
   protected isActive(tab: ChatTab): boolean {
-    return chatTabKey(tab) === chatTabKey(this.activeTab());
+    const active = this.activeTab();
+    return active !== null && chatTabKey(tab) === chatTabKey(active);
   }
 
   protected tabLabel(tab: ChatTab): string {
-    return tab.kind === 'channel'
-      ? `Channel ${tab.channel}`
-      : (this.nodeNames().get(tab.nodeNum) ?? `!${tab.nodeNum.toString(16).padStart(8, '0')}`);
+    if (tab.kind === 'team') {
+      return this.teams().find((team) => team.id === tab.teamId)?.name ?? 'Team';
+    }
+    return this.nodeNames()[tab.nodeNum] ?? formatNodeId(tab.nodeNum);
   }
 
   protected senderLabel(message: MeshMessage): string {
@@ -127,7 +180,7 @@ export class ChatDrawer {
       return message.createdBy ?? 'You';
     }
     return (
-      (message.fromNodeNum !== null ? this.nodeNames().get(message.fromNodeNum) : undefined) ??
+      (message.fromNodeNum !== null ? this.nodeNames()[message.fromNodeNum] : undefined) ??
       message.fromNodeId ??
       'Unknown'
     );
@@ -141,22 +194,27 @@ export class ChatDrawer {
 
   protected send(): void {
     const text = this.draft().trim();
-    if (!text || this.tooLong() || this.sending()) {
+    const tab = this.activeTab();
+    if (!text || !tab || this.tooLong() || this.sending()) {
       return;
     }
-    const tab = this.activeTab();
     this.sending.set(true);
     this.error.set(null);
     this.api
       .sendMessage({
-        channelIndex: tab.kind === 'channel' ? tab.channel : null,
         toNodeNum: tab.kind === 'dm' ? tab.nodeNum : null,
+        teamId: tab.kind === 'team' ? tab.teamId : null,
         text,
       })
       .subscribe({
         next: (message) => {
           this.sending.set(false);
           this.draft.set('');
+          // Clear the box itself too: the [value] binding skips '' when it never saw the typed text.
+          const box = this.draftInput()?.nativeElement;
+          if (box) {
+            box.value = '';
+          }
           this.messages.update((page) => upsertMessage(page, message));
         },
         error: (error: unknown) => {
@@ -175,16 +233,12 @@ export class ChatDrawer {
   }
 
   private onMessage(message: MeshMessage): void {
-    if (message.kind === 'Verification') {
-      return;
-    }
     const tab = tabOf(message);
-    if (tab.kind === 'channel' && tab.channel !== 0) {
-      // Only the primary channel has a tab for now.
+    if (message.kind === 'Verification' || tab === null) {
       return;
     }
     if (tab.kind === 'dm') {
-      this.ensureTab(tab);
+      this.ensureConversation(tab.nodeNum);
     }
     if (this.expanded() && this.isActive(tab)) {
       this.messages.update((page) => upsertMessage(page, message));
@@ -194,10 +248,7 @@ export class ChatDrawer {
     }
   }
 
-  private ensureTab(tab: ChatTab): void {
-    const key = chatTabKey(tab);
-    this.tabs.update((tabs) =>
-      tabs.some((item) => chatTabKey(item) === key) ? tabs : [...tabs, tab],
-    );
+  private ensureConversation(nodeNum: number): void {
+    this.conversations.update((nodes) => (nodes.includes(nodeNum) ? nodes : [...nodes, nodeNum]));
   }
 }

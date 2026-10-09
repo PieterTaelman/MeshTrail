@@ -1,21 +1,15 @@
 using Mediator;
-using Meshtrail.Core.Application.Repositories;
 
 namespace Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordNodeInfo;
 
-
-/// <summary>Creates or refreshes a node from the gateway's node database.</summary>
-public sealed class RecordNodeInfoHandler(
-    IMeshNodeRepository nodes,
-    IMeshGatewayRepository gateways,
-    INodeRegistrationRepository registrations,
-    TimeProvider timeProvider,
-    IPublisher publisher) : ICommandHandler<RecordNodeInfoCommand>
+/// <summary>Creates or refreshes a node from a gateway's node database.</summary>
+public sealed class RecordNodeInfoHandler(MeshNodeStores stores, TimeProvider timeProvider, IPublisher publisher)
+    : ICommandHandler<RecordNodeInfoCommand>
 {
     public async ValueTask<Unit> Handle(RecordNodeInfoCommand command, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
-        await MeshNodeUpdates.ApplyAsync(nodes, gateways, registrations, publisher, command.NodeNum, now, async node =>
+        await MeshNodeUpdates.ApplyAsync(stores, publisher, command.NodeNum, now, async node =>
         {
             if (command.User is { } user)
             {
@@ -26,6 +20,11 @@ public sealed class RecordNodeInfoHandler(
             {
                 // RSSI is not in the node database; keep the last value we measured ourselves.
                 node.RecordHeard(heardAt, command.Snr, null, command.HopsAway, now);
+                if (command.NodeNum != command.GatewayNodeNum)
+                {
+                    await stores.Receptions.RecordAsync(
+                        command.NodeNum, command.GatewayNodeNum, heardAt, command.Snr, null, command.HopsAway, now, cancellationToken);
+                }
             }
 
             if (command.Telemetry is { } telemetry)
@@ -35,10 +34,9 @@ public sealed class RecordNodeInfoHandler(
 
             if (command.Position is { } position)
             {
-                await MeshNodeUpdates.RecordPositionAsync(nodes, node, position, command.ReceivedAt, now, cancellationToken);
+                await MeshNodeUpdates.RecordPositionAsync(stores.Nodes, node, position, command.ReceivedAt, now, cancellationToken);
             }
         }, cancellationToken);
         return Unit.Value;
     }
 }
-

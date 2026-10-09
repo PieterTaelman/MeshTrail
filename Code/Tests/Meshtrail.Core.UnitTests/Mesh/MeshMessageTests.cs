@@ -12,7 +12,7 @@ public sealed class MeshMessageTests
     public void QueueOutbound_Valid_IsQueuedAndTrimmed()
     {
         // Act
-        var message = MeshMessage.QueueOutbound(0, HikerNodeNum, "  hi  ", MessageKind.Text, 1, GatewayNodeNum, UserName, Now);
+        var message = MeshMessage.QueueOutbound(0, "LongFast", HikerNodeNum, "  hi  ", MessageKind.Text, 1, GatewayNodeNum, VirtualNodeNum, UserName, UserName, Now);
 
         // Assert
         message.Status.ShouldBe(MessageStatus.Queued);
@@ -24,14 +24,14 @@ public sealed class MeshMessageTests
     public void QueueOutbound_200Bytes_IsAllowed()
     {
         // Act + Assert (100 × "é" = 200 bytes)
-        Should.NotThrow(() => MeshMessage.QueueOutbound(0, null, new string('é', 100), MessageKind.Text, 1, null, UserName, Now));
+        Should.NotThrow(() => MeshMessage.QueueOutbound(0, null, null, new string('é', 100), MessageKind.Text, 1, GatewayNodeNum, null, UserName, UserName, Now));
     }
 
     [TestMethod]
     public void QueueOutbound_201Bytes_Throws()
     {
         // Act + Assert (67 × "€" = 201 bytes)
-        Should.Throw<DomainException>(() => MeshMessage.QueueOutbound(0, null, new string('€', 67), MessageKind.Text, 1, null, UserName, Now));
+        Should.Throw<DomainException>(() => MeshMessage.QueueOutbound(0, null, null, new string('€', 67), MessageKind.Text, 1, GatewayNodeNum, null, UserName, UserName, Now));
     }
 
     [TestMethod]
@@ -40,7 +40,7 @@ public sealed class MeshMessageTests
     public void QueueOutbound_ChannelOutOfRange_Throws(int channel)
     {
         // Act + Assert
-        Should.Throw<DomainException>(() => MeshMessage.QueueOutbound(channel, null, "hi", MessageKind.Text, 1, null, UserName, Now));
+        Should.Throw<DomainException>(() => MeshMessage.QueueOutbound(channel, null, null, "hi", MessageKind.Text, 1, GatewayNodeNum, null, UserName, UserName, Now));
     }
 
     [TestMethod]
@@ -50,7 +50,7 @@ public sealed class MeshMessageTests
         var message = QueuedMessage();
 
         // Act
-        message.MarkSent(GatewayNodeNum, Now);
+        message.MarkSent(Now);
         message.MarkAcked(Now.AddSeconds(5));
 
         // Assert
@@ -71,7 +71,7 @@ public sealed class MeshMessageTests
     {
         // Arrange
         var message = QueuedMessage();
-        message.MarkSent(GatewayNodeNum, Now);
+        message.MarkSent(Now);
         message.MarkAcked(Now);
 
         // Act + Assert
@@ -83,7 +83,7 @@ public sealed class MeshMessageTests
     {
         // Arrange
         var message = QueuedMessage();
-        message.MarkSent(GatewayNodeNum, Now);
+        message.MarkSent(Now);
 
         // Act
         message.MarkFailed("MaxRetransmit");
@@ -97,20 +97,22 @@ public sealed class MeshMessageTests
     public void MarkSent_InboundMessage_Throws()
     {
         // Arrange
-        var message = MeshMessage.Received(HikerNodeNum, null, 0, "hi", 9, null, null, null, Now);
+        var message = MeshMessage.Received(HikerNodeNum, null, 0, "LongFast", GatewayNodeNum, "hi", 9, null, null, null, Now);
 
         // Act + Assert
-        Should.Throw<DomainException>(() => message.MarkSent(GatewayNodeNum, Now));
+        Should.Throw<DomainException>(() => message.MarkSent(Now));
     }
 
     [TestMethod]
     public void Received_UntrustedText_IsCleaned()
     {
         // Act
-        var message = MeshMessage.Received(HikerNodeNum, GatewayNodeNum, 0, "\u0007SOS\nhelp", 9, 5.5, -80, 1, Now);
+        var message = MeshMessage.Received(HikerNodeNum, VirtualNodeNum, 0, "Long\u0007Fast", GatewayNodeNum, "\u0007SOS\nhelp", 9, 5.5, -80, 1, Now);
 
         // Assert
         message.Text.ShouldBe("SOS help");
+        message.ChannelName.ShouldBe("LongFast");
+        message.GatewayNodeNum.ShouldBe(GatewayNodeNum);
         message.Status.ShouldBe(MessageStatus.Received);
         message.PeerNodeNum.ShouldBe(HikerNodeNum);
     }

@@ -12,33 +12,35 @@ using static Meshtrail.Core.IntegrationTests.Mesh.MessagingApiTestHelpers;
 
 namespace Meshtrail.Core.IntegrationTests.Mesh;
 
-/// <summary>Registration (contact link + code) and messaging (queue → sent → acked/failed) end to end.</summary>
+/// <summary>Registration (contact link + code) and direct messages (queue → sent → acked/failed) end to end.</summary>
 [TestClass]
 public sealed class MessagingApiTests
 {
     private HttpClient _client = null!;
+    private TestGateway _gateway = null!;
 
     [TestInitialize]
     public async Task InitializeAsync()
     {
         _client = AssemblySetup.Factory.CreateClient();
 
-        // Sending needs an online gateway.
-        await EventuallyAsync(() => TryGetAsync<GatewayStatusDto>(_client, GatewayUrl), status => status.Status == "Online");
+        // Sending needs an online gateway that heard the node.
+        _gateway = await AddOnlineGatewayAsync();
     }
 
     [TestCleanup]
     public void Cleanup() => _client.Dispose();
 
     [TestMethod]
-    public async Task Register_ValidLinkAndCode_VerifiesAndGivesKeyToGateway()
+    public async Task Register_ValidLinkAndCode_SendsCodeViaTheGatewayAndVerifies()
     {
         // Arrange
         var nodeNum = UniqueNodeNum();
-        var key = Key(7);
+        await InjectNodeAsync(_client, _gateway, nodeNum, UniqueName());
 
         // Act
-        var claimed = await RegisterAsync(_client, nodeNum, key);
+        var claimed = await RegisterAsync(_client, nodeNum, Key(7));
+        var (via, packet) = await Transport.WaitForSentAsync((_, sent) => sent.To == nodeNum && sent.Decoded.Portnum == PortNum.TextMessageApp);
         var code = await SentCodeAsync(nodeNum);
         var response = await _client.PostAsJsonAsync($"{RegistrationsUrl}/{claimed.Id}/verify", new VerifyRegistrationRequest(code));
 
@@ -47,16 +49,11 @@ public sealed class MessagingApiTests
         claimed.AttemptsLeft.ShouldBe(5);
         claimed.LongName.ShouldBe("Hiker");
         code.Length.ShouldBe(6);
+        via.GatewayNodeNum.ShouldBe(_gateway.NodeNum);
+        packet.From.ShouldBe(VirtualNodeNum);
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await response.Content.ReadFromJsonAsync<RegistrationDto>())!.Status.ShouldBe("Verified");
-
-        var admin = await Radio.WaitForSentPacketAsync(packet =>
-            packet.To == FakeMeshRadio.GatewayNodeNum &&
-            packet.Decoded.Portnum == PortNum.AdminApp &&
-            AdminMessage.Parser.ParseFrom(packet.Decoded.Payload).AddContact?.NodeNum == nodeNum);
-        AdminMessage.Parser.ParseFrom(admin.Decoded.Payload).AddContact.User.PublicKey.ToByteArray().ShouldBe(key);
-
         var node = await _client.GetFromJsonAsync<NodeDetailDto>(NodeUrl(nodeNum));
         node!.Node.IsRegistered.ShouldBeTrue();
         var mine = await _client.GetFromJsonAsync<List<RegistrationDto>>(RegistrationsUrl);
@@ -64,10 +61,23 @@ public sealed class MessagingApiTests
     }
 
     [TestMethod]
+    public async Task Register_NodeNeverHeard_Returns422()
+    {
+        // Act
+        var response = await _client.PostAsJsonAsync(
+            $"{RegistrationsUrl}/from-contact-url", new RegisterFromContactUrlRequest(ContactLink(UniqueNodeNum(), Key(8))));
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        (await response.Content.ReadFromJsonAsync<ProblemDetails>())!.Detail!.ShouldContain("has not been heard by any gateway yet");
+    }
+
+    [TestMethod]
     public async Task Verify_WrongCode_Returns422AndCountsTheAttempt()
     {
         // Arrange
         var nodeNum = UniqueNodeNum();
+        await InjectNodeAsync(_client, _gateway, nodeNum, UniqueName());
         var claimed = await RegisterAsync(_client, nodeNum, Key(9));
         var code = await SentCodeAsync(nodeNum);
         var wrong = code == "000000" ? "111111" : "000000";
@@ -87,10 +97,7 @@ public sealed class MessagingApiTests
     {
         // Arrange: the node itself broadcasts key A, the link carries key B.
         var nodeNum = UniqueNodeNum();
-        var nodeInfo = NodeInfo(nodeNum, UniqueName());
-        nodeInfo.NodeInfo.User.PublicKey = ByteString.CopyFrom(Key(1));
-        Radio.Inject(nodeInfo);
-        await EventuallyAsync(() => TryGetAsync<NodeDetailDto>(_client, NodeUrl(nodeNum)), detail => detail.Node.HasPublicKey);
+        await InjectNodeAsync(_client, _gateway, nodeNum, UniqueName(), publicKey: Key(1));
 
         // Act
         var response = await _client.PostAsJsonAsync(
@@ -116,6 +123,7 @@ public sealed class MessagingApiTests
     {
         // Arrange
         var nodeNum = UniqueNodeNum();
+        await InjectNodeAsync(_client, _gateway, nodeNum, UniqueName());
         var claimed = await RegisterAsync(_client, nodeNum, Key(3));
         await _client.PostAsJsonAsync($"{RegistrationsUrl}/{claimed.Id}/verify", new VerifyRegistrationRequest(await SentCodeAsync(nodeNum)));
 
@@ -127,10 +135,31 @@ public sealed class MessagingApiTests
     }
 
     [TestMethod]
+    public async Task OwnerFilter_ListsOnlyMyRegisteredNodes()
+    {
+        // Arrange
+        var mine = UniqueNodeNum();
+        var notMine = UniqueNodeNum();
+        await InjectNodeAsync(_client, _gateway, mine, UniqueName());
+        await InjectNodeAsync(_client, _gateway, notMine, UniqueName());
+        var claimed = await RegisterAsync(_client, mine, Key(11));
+        await _client.PostAsJsonAsync($"{RegistrationsUrl}/{claimed.Id}/verify", new VerifyRegistrationRequest(await SentCodeAsync(mine)));
+
+        // Act
+        var page = await _client.GetFromJsonAsync<PagedResult<NodeDto>>($"{NodesUrl}?owner=me&pageSize=500");
+
+        // Assert
+        page!.Items.ShouldContain(node => node.NodeNum == mine);
+        page.Items.ShouldNotContain(node => node.NodeNum == notMine);
+    }
+
+    [TestMethod]
     public async Task Revoke_OwnRegistration_Returns204AndRemovesIt()
     {
         // Arrange
-        var claimed = await RegisterAsync(_client, UniqueNodeNum(), Key(4));
+        var nodeNum = UniqueNodeNum();
+        await InjectNodeAsync(_client, _gateway, nodeNum, UniqueName());
+        var claimed = await RegisterAsync(_client, nodeNum, Key(4));
 
         // Act
         var response = await _client.DeleteAsync($"{RegistrationsUrl}/{claimed.Id}");
@@ -156,6 +185,7 @@ public sealed class MessagingApiTests
     {
         // Arrange
         var nodeNum = UniqueNodeNum();
+        await InjectNodeAsync(_client, _gateway, nodeNum, UniqueName());
         await RegisterAsync(_client, nodeNum, Key(5));
         await SentCodeAsync(nodeNum);
 
@@ -171,19 +201,20 @@ public sealed class MessagingApiTests
     {
         // Arrange
         var nodeNum = UniqueNodeNum();
-        await InjectNodeAsync(_client, nodeNum, UniqueName());
+        await InjectNodeAsync(_client, _gateway, nodeNum, UniqueName());
 
         // Act
-        var response = await _client.PostAsJsonAsync(MessagesUrl, new SendMessageRequest(null, nodeNum, "Are you OK?"));
+        var response = await _client.PostAsJsonAsync(MessagesUrl, new SendMessageRequest(nodeNum, null, "Are you OK?"));
         var queued = (await response.Content.ReadFromJsonAsync<MessageDto>())!;
-        var packet = await Radio.WaitForSentPacketAsync(sent => sent.To == nodeNum && sent.Decoded.Portnum == PortNum.TextMessageApp);
+        var (_, packet) = await Transport.WaitForSentAsync((_, sent) => sent.To == nodeNum && sent.Decoded.Portnum == PortNum.TextMessageApp);
         await WaitForStatusAsync(_client, $"{MessagesUrl}?node={nodeNum}", queued.Id, "Sent");
-        Radio.Inject(RoutingReport(nodeNum, packet.Id));
+        Transport.Inject(_gateway.NodeNum, _gateway.Login, RoutingReport(nodeNum, packet.Id));
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.Accepted);
         queued.Status.ShouldBe("Queued");
         queued.CreatedBy.ShouldBe(MeshtrailApiFactory.TestUser);
+        queued.GatewayNodeNum.ShouldBe(_gateway.NodeNum);
         packet.WantAck.ShouldBeTrue();
         packet.Decoded.Payload.ToStringUtf8().ShouldBe("Are you OK?");
         var acked = await WaitForStatusAsync(_client, $"{MessagesUrl}?node={nodeNum}", queued.Id, "Acked");
@@ -191,19 +222,22 @@ public sealed class MessagingApiTests
     }
 
     [TestMethod]
-    public async Task SendChannelMessage_ImplicitAckFromGateway_BecomesAcked()
+    public async Task SendDirectMessage_HeardByTwoGateways_GoesViaTheNearestOne()
     {
         // Arrange
-        var text = $"hello {UniqueName()}";
+        var near = await AddOnlineGatewayAsync();
+        var nodeNum = UniqueNodeNum();
+        await InjectNodeAsync(_client, _gateway, nodeNum, UniqueName(), hops: 3);
+        Transport.Inject(near.NodeNum, near.Login, Packet(nodeNum, PortNum.TelemetryApp, new Telemetry { DeviceMetrics = new DeviceMetrics { BatteryLevel = 80 } }, hops: 0));
+        await EventuallyAsync(() => TryGetAsync<NodeDetailDto>(_client, NodeUrl(nodeNum)), detail => detail.HeardBy.Count == 2);
 
         // Act
-        var queued = (await (await _client.PostAsJsonAsync(MessagesUrl, new SendMessageRequest(0, null, text))).Content.ReadFromJsonAsync<MessageDto>())!;
-        var packet = await Radio.WaitForSentPacketAsync(sent => sent.Decoded?.Payload.ToStringUtf8() == text);
-        Radio.Inject(RoutingReport(FakeMeshRadio.GatewayNodeNum, packet.Id));
+        await _client.PostAsJsonAsync(MessagesUrl, new SendMessageRequest(nodeNum, null, "via the nearest gateway"));
 
         // Assert
-        packet.To.ShouldBe(uint.MaxValue);
-        await WaitForStatusAsync(_client, $"{MessagesUrl}?channel=0", queued.Id, "Acked");
+        var (via, _) = await Transport.WaitForSentAsync((_, sent) => sent.To == nodeNum && sent.Decoded.Portnum == PortNum.TextMessageApp);
+        via.GatewayNodeNum.ShouldBe(near.NodeNum);
+        via.MqttUserName.ShouldBe(near.Login);
     }
 
     [TestMethod]
@@ -211,16 +245,37 @@ public sealed class MessagingApiTests
     {
         // Arrange
         var nodeNum = UniqueNodeNum();
-        await InjectNodeAsync(_client, nodeNum, UniqueName());
+        await InjectNodeAsync(_client, _gateway, nodeNum, UniqueName());
 
         // Act
-        var queued = (await (await _client.PostAsJsonAsync(MessagesUrl, new SendMessageRequest(null, nodeNum, "ping"))).Content.ReadFromJsonAsync<MessageDto>())!;
-        var packet = await Radio.WaitForSentPacketAsync(sent => sent.To == nodeNum && sent.Decoded.Portnum == PortNum.TextMessageApp);
-        Radio.Inject(RoutingReport(FakeMeshRadio.GatewayNodeNum, packet.Id, Routing.Types.Error.MaxRetransmit));
+        var queued = (await (await _client.PostAsJsonAsync(MessagesUrl, new SendMessageRequest(nodeNum, null, "ping"))).Content.ReadFromJsonAsync<MessageDto>())!;
+        var (_, packet) = await Transport.WaitForSentAsync((_, sent) => sent.To == nodeNum && sent.Decoded.Portnum == PortNum.TextMessageApp);
+        Transport.Inject(_gateway.NodeNum, _gateway.Login, RoutingReport(_gateway.NodeNum, packet.Id, Routing.Types.Error.MaxRetransmit));
 
         // Assert
         var failed = await WaitForStatusAsync(_client, $"{MessagesUrl}?node={nodeNum}", queued.Id, "Failed");
         failed.FailureReason.ShouldBe("MaxRetransmit");
+    }
+
+    [TestMethod]
+    public async Task Send_NodeOnlyHeardByAnOfflineGateway_Returns422()
+    {
+        // Arrange
+        var gateway = await AddOnlineGatewayAsync();
+        var nodeNum = UniqueNodeNum();
+        await InjectNodeAsync(_client, gateway, nodeNum, UniqueName());
+        Transport.Connected(_gateway.Login);
+        using var owner = ClientAs(gateway.Owner);
+        await EventuallyAsync(
+            async () => (await TryGetAsync<List<GatewayDto>>(owner, $"{GatewaysUrl}?mine=true"))?.SingleOrDefault(),
+            dto => dto.Status == "Offline");
+
+        // Act
+        var response = await _client.PostAsJsonAsync(MessagesUrl, new SendMessageRequest(nodeNum, null, "anyone?"));
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        (await response.Content.ReadFromJsonAsync<ProblemDetails>())!.Detail!.ShouldStartWith("No gateway can reach node");
     }
 
     [TestMethod]
@@ -230,7 +285,7 @@ public sealed class MessagingApiTests
         var text = new string('€', 67);
 
         // Act
-        var response = await _client.PostAsJsonAsync(MessagesUrl, new SendMessageRequest(0, null, text));
+        var response = await _client.PostAsJsonAsync(MessagesUrl, new SendMessageRequest(12345, null, text));
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
@@ -238,47 +293,67 @@ public sealed class MessagingApiTests
     }
 
     [TestMethod]
+    public async Task Send_Broadcast_Returns400()
+    {
+        // Act: there is no worldwide channel.
+        var response = await _client.PostAsJsonAsync(MessagesUrl, new SendMessageRequest(uint.MaxValue, null, "hello world"));
+
+        // Assert
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await response.Content.ReadFromJsonAsync<ValidationProblemDetails>())!.Errors.Keys.ShouldContain("ToNodeNum");
+    }
+
+    [TestMethod]
     public async Task Send_DirectMessageToUnknownNode_Returns404()
     {
         // Act
-        var response = await _client.PostAsJsonAsync(MessagesUrl, new SendMessageRequest(null, UniqueNodeNum(), "hi"));
+        var response = await _client.PostAsJsonAsync(MessagesUrl, new SendMessageRequest(UniqueNodeNum(), null, "hi"));
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
     [TestMethod]
-    public async Task GetMessages_ChannelAndNodeTogether_Returns400()
+    public async Task GetMessages_WithoutNode_Returns400()
     {
         // Act
-        var response = await _client.GetAsync($"{MessagesUrl}?channel=0&node=12345");
+        var response = await _client.GetAsync(MessagesUrl);
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
 
     [TestMethod]
-    public async Task InboundTexts_AreListedOnceInChannelAndConversation()
+    public async Task InboundDirectMessage_HeardByTwoGateways_IsListedOnce()
     {
         // Arrange
+        var second = await AddOnlineGatewayAsync();
         var nodeNum = UniqueNodeNum();
-        var channelText = $"broadcast {UniqueName()}";
+        var other = UniqueNodeNum();
         var directText = $"direct {UniqueName()}";
+        var privateText = $"private {UniqueName()}";
+        var toUs = TextFrom(nodeNum, VirtualNodeNum, directText, 1002);
 
-        // Act: the channel message arrives twice (the mesh may repeat a packet).
-        Radio.Inject(TextFrom(nodeNum, uint.MaxValue, channelText, 1001));
-        Radio.Inject(TextFrom(nodeNum, uint.MaxValue, channelText, 1001));
-        Radio.Inject(TextFrom(nodeNum, FakeMeshRadio.GatewayNodeNum, directText, 1002));
+        // Only people who wrote to the node may read the conversation: write first.
+        await InjectNodeAsync(_client, _gateway, nodeNum, UniqueName());
+        await _client.PostAsJsonAsync(MessagesUrl, new SendMessageRequest(nodeNum, null, "hello"));
+
+        // Act: both gateways uplink the reply; a direct message between two other nodes passes by too.
+        Transport.Inject(_gateway.NodeNum, _gateway.Login, toUs);
+        Transport.Inject(second.NodeNum, second.Login, toUs);
+        Transport.Inject(_gateway.NodeNum, _gateway.Login, TextFrom(nodeNum, other, privateText, 1003));
 
         // Assert
-        var conversation = await EventuallyAsync(
+        await EventuallyAsync(
             () => TryGetAsync<PagedResult<MessageDto>>(_client, $"{MessagesUrl}?node={nodeNum}"),
-            page => page.Items.Count == 1);
-        conversation.Items[0].Text.ShouldBe(directText);
-        conversation.Items[0].Direction.ShouldBe("Inbound");
-        conversation.Items[0].PeerNodeNum.ShouldBe(nodeNum);
-
-        var channel = await _client.GetFromJsonAsync<PagedResult<MessageDto>>($"{MessagesUrl}?channel=0&pageSize=200");
-        channel!.Items.Count(message => message.Text == channelText).ShouldBe(1);
+            page => page.Items.Any(item => item.Direction == "Inbound"));
+        await Task.Delay(500);
+        var conversation = (await _client.GetFromJsonAsync<PagedResult<MessageDto>>($"{MessagesUrl}?node={nodeNum}"))!;
+        conversation.Items.ShouldNotContain(item => item.Text == privateText);
+        var message = conversation.Items.Where(item => item.Direction == "Inbound").ShouldHaveSingleItem();
+        message.Text.ShouldBe(directText);
+        message.Direction.ShouldBe("Inbound");
+        message.PeerNodeNum.ShouldBe(nodeNum);
+        message.ChannelName.ShouldBe(FakeGatewayTransport.Channel);
     }
 }

@@ -19,7 +19,7 @@ builder.AddServiceDefaults();
 builder.Services
     .AddApplication()
     .AddInfrastructure(builder.Configuration)
-    // The Meshtastic gateway runs inside this process (see Documentation/Mesh/README.md).
+    // The mesh platform (gateway transports, ingest, outbox) runs inside this process (see Documentation/Mesh/README.md).
     .AddMesh(builder.Configuration);
 
 // The source generator writes AddMediator at compile time from this lambda, so keep it a plain literal.
@@ -64,7 +64,7 @@ builder.Services.AddSignalR();
 
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<MeshtrailDbContext>("database")
-    // Reports Degraded (never Unhealthy) while the radio is offline, so /health/ready stays 200.
+    // Reports Degraded (never Unhealthy) while a gateway transport is offline, so /health/ready stays 200.
     .AddCheck<MeshGatewayHealthCheck>(MeshGatewayHealthCheck.Name);
 
 const string CorsPolicy = "client-web";

@@ -2,5 +2,11 @@ using Mediator;
 
 namespace Meshtrail.Core.Application.UseCases.Mesh.Commands.RecordNodeHeard;
 
-/// <summary>Sent by the gateway worker for every packet: the node is alive and in range.</summary>
-public sealed record RecordNodeHeardCommand(uint NodeNum, DateTimeOffset HeardAt, double? Snr, int? Rssi, int? HopsAway) : ICommand;
+/// <summary>A packet from the node reached a gateway: the node is alive, and that gateway can reach it.</summary>
+public sealed record RecordNodeHeardCommand(
+    uint NodeNum,
+    uint GatewayNodeNum,
+    DateTimeOffset HeardAt,
+    double? Snr,
+    int? Rssi,
+    int? HopsAway) : ICommand;

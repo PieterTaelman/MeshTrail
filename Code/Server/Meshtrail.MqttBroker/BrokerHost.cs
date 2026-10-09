@@ -52,7 +52,7 @@ internal sealed partial class BrokerHost(
             : $"{NodeIds.Format(packet.From)} encrypted (turn off MQTT encryption on the gateway)"
         : $"{uplink.Payload.Length} bytes";
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "MQTT broker listening on {BindAddress}:{Port} (any gateway login accepted: {AllowAnyGateway})")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "MQTT broker listening on {BindAddress}:{Port} (any gateway login accepted without asking the API: {AllowAnyGateway})")]
     private partial void LogStarted(int port, string bindAddress, bool allowAnyGateway);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Uplink from {ClientId}: {Kind} on {Channel}: {Summary}")]

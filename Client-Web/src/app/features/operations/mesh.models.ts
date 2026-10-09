@@ -8,18 +8,49 @@ export interface PagedResult<T> {
   pageSize: number;
 }
 
-export type GatewayState = 'Connecting' | 'Online' | 'Offline';
+/** Pending = credentials handed out, waiting for the first uplink (which tells us which node it is). */
+export type GatewayState = 'Pending' | 'Online' | 'Offline' | 'Revoked';
 
-export interface GatewayStatus {
-  status: GatewayState;
-  /** "Tcp" (real node) or "Simulated". */
-  mode: string;
-  statusChangedAt: string;
-  lastConnectedAt: string | null;
-  lastError: string | null;
+/** A node that connects the mesh around it to Meshtrail. lastError and mqttUserName only for your own (isMine). */
+export interface Gateway {
+  id: string;
   nodeNum: number | null;
   nodeId: string | null;
+  /** From the radio: render as text. */
+  name: string;
+  transport: 'Mqtt' | 'Tcp' | 'Simulated';
+  status: GatewayState;
+  statusChangedAt: string;
+  lastUplinkAt: string | null;
+  lastError: string | null;
   firmwareVersion: string | null;
+  broker: string | null;
+  channels: string[];
+  isMine: boolean;
+  mqttUserName: string | null;
+  createdAt: string;
+  position: Position | null;
+}
+
+export interface GatewaySummary {
+  online: number;
+  total: number;
+}
+
+/** What goes in the node's MQTT settings. serverAddress null = not configured on the server. */
+export interface MqttSetup {
+  serverAddress: string | null;
+  port: number;
+  useTls: boolean;
+  root: string;
+}
+
+/** Answer of "Add gateway": the password is shown this one time only. */
+export interface GatewayCredentials {
+  gateway: Gateway;
+  userName: string;
+  password: string;
+  setup: MqttSetup;
 }
 
 export interface Position {
@@ -61,7 +92,14 @@ export interface NodeListRequest {
   search?: string;
   registered?: boolean;
   online?: boolean;
+  /** Only nodes in this map view. */
+  bbox?: BoundingBox;
+  /** Only nodes registered to me. */
+  mine?: boolean;
 }
+
+/** A map view: [west, south, east, north] in degrees. */
+export type BoundingBox = [number, number, number, number];
 
 export interface RouteHop {
   nodeNum: number;
@@ -83,9 +121,22 @@ export interface NodeTraceroute {
   routeBack: RouteHop[];
 }
 
+/** A gateway that heard the node. The first one is the gateway we would send through. */
+export interface HeardBy {
+  gatewayNodeNum: number;
+  gatewayNodeId: string;
+  gatewayName: string;
+  gatewayOnline: boolean;
+  lastHeardAt: string;
+  snr: number | null;
+  rssi: number | null;
+  hopsAway: number | null;
+}
+
 export interface NodeDetail {
   node: MeshNode;
   lastTraceroute: NodeTraceroute | null;
+  heardBy: HeardBy[];
 }
 
 /** Properties the "nodes" map layer puts on each GeoJSON feature. */
@@ -105,6 +156,18 @@ export interface NodeFeatureProperties {
   precisionBits: number;
 }
 
+/** Properties the "gateways" map layer puts on each GeoJSON feature. */
+export interface GatewayFeatureProperties {
+  layer: 'gateways';
+  gatewayId: string;
+  nodeNum: number;
+  nodeId: string;
+  longName: string;
+  transport: string;
+  status: GatewayState;
+  lastUplinkAt: string | null;
+}
+
 export type MessageStatus = 'Queued' | 'Sent' | 'Acked' | 'Failed' | 'Received';
 
 /** A chat message. toNodeNum null = channel broadcast; peerNodeNum = the other node of a direct message. */
@@ -114,6 +177,11 @@ export interface MeshMessage {
   /** Verification messages never show their text (the code stays on the server). */
   kind: 'Text' | 'Verification';
   channelIndex: number;
+  channelName: string | null;
+  /** The gateway it went out through (or first arrived through; null for team messages we sent). */
+  gatewayNodeNum: number | null;
+  /** Team chat: the team whose channel it is on. */
+  teamId: string | null;
   fromNodeNum: number | null;
   fromNodeId: string | null;
   toNodeNum: number | null;
@@ -131,17 +199,38 @@ export interface MeshMessage {
   ackedAt: string | null;
 }
 
+/** One direct-message conversation (node) or one team chat (team). There is no worldwide channel. */
 export interface MessageListRequest {
   page: number;
   pageSize: number;
-  channel?: number;
   node?: number;
+  team?: string;
 }
 
+/** Exactly one of toNodeNum (direct message) or teamId (team chat). */
 export interface SendMessageRequest {
-  channelIndex: number | null;
   toNodeNum: number | null;
+  teamId: string | null;
   text: string;
+}
+
+export interface TeamMember {
+  userName: string;
+  role: 'Owner' | 'Member';
+  joinedAt: string;
+}
+
+/** A team you are in. gatewaysOnline = online gateways carrying its channel (0 = team messages cannot go out). */
+export interface Team {
+  id: string;
+  name: string;
+  /** The Meshtastic channel the team chats on (configure the same name and key on the nodes). */
+  channelName: string;
+  joinCode: string;
+  myRole: 'Owner' | 'Member';
+  members: TeamMember[];
+  gatewaysOnline: number;
+  createdAt: string;
 }
 
 export type RegistrationStatus = 'Claimed' | 'Verified' | 'Revoked';
@@ -177,4 +266,4 @@ export const MESH_EVENTS = {
 } as const;
 
 /** Map layer names (MapLayers in C#). */
-export const MAP_LAYERS = { nodes: 'nodes' } as const;
+export const MAP_LAYERS = { nodes: 'nodes', gateways: 'gateways' } as const;

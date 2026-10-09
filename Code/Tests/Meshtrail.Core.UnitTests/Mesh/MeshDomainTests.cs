@@ -5,55 +5,10 @@ using static Meshtrail.Core.UnitTests.Mesh.MeshTestHelpers;
 
 namespace Meshtrail.Core.UnitTests.Mesh;
 
-/// <summary>Rules of the smaller Mesh domain types: gateway, traceroute, position and untrusted text.</summary>
+/// <summary>Rules of the smaller Mesh domain types: traceroute, position and untrusted text.</summary>
 [TestClass]
 public sealed class MeshDomainTests
 {
-    [TestMethod]
-    public void Gateway_ChangeStatus_SameValues_ReturnsFalse()
-    {
-        // Arrange
-        var gateway = Gateway(GatewayStatus.Offline);
-
-        // Act
-        var changed = gateway.ChangeStatus(GatewayStatus.Offline, "Tcp", "test", Now);
-
-        // Assert
-        changed.ShouldBeFalse();
-    }
-
-    [TestMethod]
-    public void Gateway_ChangeStatus_Online_ClearsErrorAndSetsLastConnected()
-    {
-        // Arrange
-        var gateway = Gateway(GatewayStatus.Offline);
-
-        // Act
-        var changed = gateway.ChangeStatus(GatewayStatus.Online, "Tcp", "ignored", Now);
-
-        // Assert
-        changed.ShouldBeTrue();
-        gateway.LastError.ShouldBeNull();
-        gateway.LastConnectedAt.ShouldBe(Now);
-        gateway.StatusChangedAt.ShouldBe(Now);
-    }
-
-    [TestMethod]
-    [DataRow(GatewayStatus.Offline)]
-    [DataRow(GatewayStatus.Connecting)]
-    public void Gateway_EnsureCanSend_NotOnline_Throws(GatewayStatus status)
-    {
-        // Act + Assert
-        Should.Throw<DomainException>(() => MeshGateway.EnsureCanSend(Gateway(status)));
-    }
-
-    [TestMethod]
-    public void Gateway_EnsureCanSend_NoGatewayYet_Throws()
-    {
-        // Act + Assert
-        Should.Throw<DomainException>(() => MeshGateway.EnsureCanSend(null));
-    }
-
     [TestMethod]
     public void Traceroute_NoAnswerAfterTimeout_IsTimedOut()
     {

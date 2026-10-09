@@ -53,6 +53,8 @@ public sealed class MeshMessage
 
     public const int FailureReasonMaxLength = 100;
 
+    public const int ChannelNameMaxLength = 30;
+
     private MeshMessage()
     {
     }
@@ -64,6 +66,21 @@ public sealed class MeshMessage
     public MessageKind Kind { get; private set; }
 
     public int ChannelIndex { get; private set; }
+
+    /// <summary>Channel name as the gateway reported it (MQTT topic); null when unknown (TCP).</summary>
+    public string? ChannelName { get; private set; }
+
+    /// <summary>
+    /// The gateway the message went out through (outbound) or first arrived through (inbound). Null for a team message
+    /// we sent: it goes out through every gateway that carries the team's channel.
+    /// </summary>
+    public uint? GatewayNodeNum { get; private set; }
+
+    /// <summary>The team whose channel the message is on (team chat); null for direct messages.</summary>
+    public Guid? TeamId { get; private set; }
+
+    /// <summary>Who wrote an outbound message (user id): decides who may read the conversation.</summary>
+    public string? CreatedById { get; private set; }
 
     public uint? FromNodeNum { get; private set; }
 
@@ -99,16 +116,24 @@ public sealed class MeshMessage
 
     public static int ByteCount(string text) => Encoding.UTF8.GetByteCount(text);
 
-    /// <summary>A message we want to send. <paramref name="toNodeNum"/> null = broadcast on the channel.</summary>
+    /// <summary>
+    /// A message we want to send through <paramref name="gatewayNodeNum"/> (null = several gateways, team chat).
+    /// <paramref name="toNodeNum"/> null = broadcast on the channel. <paramref name="fromNodeNum"/> = the sender address
+    /// on the air (our virtual node, or the TCP gateway).
+    /// </summary>
     public static MeshMessage QueueOutbound(
         int channelIndex,
+        string? channelName,
         uint? toNodeNum,
         string text,
         MessageKind kind,
         uint packetId,
         uint? gatewayNodeNum,
+        uint? fromNodeNum,
+        string? createdById,
         string createdBy,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        Guid? teamId = null)
     {
         var trimmed = text?.Trim() ?? string.Empty;
         if (trimmed.Length == 0)
@@ -137,32 +162,41 @@ public sealed class MeshMessage
             Direction = MessageDirection.Outbound,
             Kind = kind,
             ChannelIndex = channelIndex,
-            FromNodeNum = gatewayNodeNum,
+            ChannelName = UntrustedText.Clean(channelName, ChannelNameMaxLength),
+            GatewayNodeNum = gatewayNodeNum,
+            FromNodeNum = fromNodeNum,
             ToNodeNum = toNodeNum,
             Text = trimmed,
             PacketId = packetId,
             Status = MessageStatus.Queued,
             CreatedAt = now,
+            CreatedById = createdById,
             CreatedBy = createdBy,
+            TeamId = teamId,
         };
     }
 
-    /// <summary>A message the gateway received. The text is untrusted: it is cleaned and cut.</summary>
+    /// <summary>A message a gateway received. The text and channel name are untrusted: they are cleaned and cut.</summary>
     public static MeshMessage Received(
         uint fromNodeNum,
         uint? toNodeNum,
         int channelIndex,
+        string? channelName,
+        uint? gatewayNodeNum,
         string text,
         uint packetId,
         double? snr,
         int? rssi,
         int? hopsAway,
-        DateTimeOffset receivedAt) => new()
+        DateTimeOffset receivedAt,
+        Guid? teamId = null) => new()
     {
         Id = Guid.CreateVersion7(receivedAt),
         Direction = MessageDirection.Inbound,
         Kind = MessageKind.Text,
         ChannelIndex = Math.Clamp(channelIndex, 0, MaxChannelIndex),
+        ChannelName = UntrustedText.Clean(channelName, ChannelNameMaxLength),
+        GatewayNodeNum = gatewayNodeNum,
         FromNodeNum = fromNodeNum,
         ToNodeNum = toNodeNum,
         Text = UntrustedText.Clean(text, StoredTextMaxLength) ?? string.Empty,
@@ -172,6 +206,7 @@ public sealed class MeshMessage
         Rssi = rssi,
         HopsAway = hopsAway,
         CreatedAt = receivedAt,
+        TeamId = teamId,
     };
 
     public static MeshMessage Rehydrate(
@@ -179,6 +214,8 @@ public sealed class MeshMessage
         MessageDirection direction,
         MessageKind kind,
         int channelIndex,
+        string? channelName,
+        uint? gatewayNodeNum,
         uint? fromNodeNum,
         uint? toNodeNum,
         string text,
@@ -189,14 +226,18 @@ public sealed class MeshMessage
         int? rssi,
         int? hopsAway,
         DateTimeOffset createdAt,
+        string? createdById,
         string? createdBy,
         DateTimeOffset? sentAt,
-        DateTimeOffset? ackedAt) => new()
+        DateTimeOffset? ackedAt,
+        Guid? teamId) => new()
     {
         Id = id,
         Direction = direction,
         Kind = kind,
         ChannelIndex = channelIndex,
+        ChannelName = channelName,
+        GatewayNodeNum = gatewayNodeNum,
         FromNodeNum = fromNodeNum,
         ToNodeNum = toNodeNum,
         Text = text,
@@ -207,16 +248,17 @@ public sealed class MeshMessage
         Rssi = rssi,
         HopsAway = hopsAway,
         CreatedAt = createdAt,
+        CreatedById = createdById,
         CreatedBy = createdBy,
         SentAt = sentAt,
         AckedAt = ackedAt,
+        TeamId = teamId,
     };
 
-    public void MarkSent(uint? gatewayNodeNum, DateTimeOffset now)
+    public void MarkSent(DateTimeOffset now)
     {
         EnsureStatus(MessageStatus.Queued, "sent");
         Status = MessageStatus.Sent;
-        FromNodeNum ??= gatewayNodeNum;
         SentAt = now;
     }
 

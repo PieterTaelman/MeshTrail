@@ -1,23 +1,14 @@
 namespace Meshtrail.Mesh.Radio;
 
-/// <summary>Which radio the gateway uses. Tcp = a real node over WiFi, Simulated = fake mesh (no hardware).</summary>
-public enum MeshRadioMode
-{
-    Tcp,
-    Simulated,
-}
-
-/// <summary>Settings from Meshtastic:Gateway in configuration.</summary>
+/// <summary>Settings from Meshtastic:Tcp: a local base-station node the server reaches over WiFi (TCP API).</summary>
 public sealed class MeshRadioOptions
 {
-    public const string SectionName = "Meshtastic:Gateway";
+    public const string SectionName = "Meshtastic:Tcp";
 
     /// <summary>The Meshtastic TCP API port; firmware always listens here.</summary>
     public const int DefaultPort = 4403;
 
-    public MeshRadioMode Mode { get; set; } = MeshRadioMode.Tcp;
-
-    /// <summary>IP address or host name of the gateway node. Keep it in user secrets, never in git.</summary>
+    /// <summary>IP address or host name of the node. Empty = no TCP gateway. Keep it in user secrets, never in git.</summary>
     public string? Host { get; set; }
 
     public int Port { get; set; } = DefaultPort;
@@ -27,6 +18,5 @@ public sealed class MeshRadioOptions
 
     public TimeSpan ConnectTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
-    /// <summary>How often the simulator invents new traffic.</summary>
-    public TimeSpan SimulatorTickInterval { get; set; } = TimeSpan.FromSeconds(15);
+    public bool IsEnabled => !string.IsNullOrWhiteSpace(Host);
 }

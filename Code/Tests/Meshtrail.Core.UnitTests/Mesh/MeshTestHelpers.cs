@@ -3,7 +3,10 @@ using Mediator;
 using Meshtastic.Protobufs;
 using Meshtrail.Core.Application.Abstractions;
 using Meshtrail.Core.Application.Repositories;
+using Meshtrail.Core.Application.UseCases.Mesh;
 using Meshtrail.Core.Domain.Mesh;
+using Meshtrail.Core.Domain.Teams;
+using Team = Meshtrail.Core.Domain.Teams.Team;
 using Meshtrail.Mesh.Framing;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
@@ -19,6 +22,15 @@ internal static class MeshTestHelpers
 
     /// <summary>The hiker node used in the examples.</summary>
     public const uint HikerNodeNum = 0x0aa0_0001;
+
+    /// <summary>A second gateway somewhere else.</summary>
+    public const uint OtherGatewayNodeNum = 0x0bb0_0002;
+
+    /// <summary>Sender number of our MQTT packets ("MTR1").</summary>
+    public const uint VirtualNodeNum = 0x4D54_5231;
+
+    public const string GatewayLogin = "gw-test12345";
+    public const string GatewayPassword = "Secret-Password-1234";
 
     public const string UserName = "test-user";
 
@@ -56,13 +68,13 @@ internal static class MeshTestHelpers
 
     // ---- radio packets
 
-    public static FromRadio Packet(uint from, PortNum port, Google.Protobuf.IMessage payload, uint requestId = 0) => new()
+    public static FromRadio Packet(uint from, PortNum port, Google.Protobuf.IMessage payload, uint requestId = 0, uint id = 1234) => new()
     {
         Packet = new MeshPacket
         {
             From = from,
             To = GatewayNodeNum,
-            Id = 1234,
+            Id = id,
             RxSnr = 6.25f,
             RxRssi = -71,
             HopStart = 3,
@@ -83,13 +95,31 @@ internal static class MeshTestHelpers
 
     public static MeshNode KnownNode(uint nodeNum = HikerNodeNum) => MeshNode.Discover(nodeNum, Now.AddDays(-1));
 
-    public static MeshGateway Gateway(GatewayStatus status)
+    /// <summary>An MQTT gateway of <see cref="UserName"/>, credentials issued but no uplink yet.</summary>
+    public static MeshGateway PendingGateway(string owner = UserName, string login = GatewayLogin) =>
+        MeshGateway.IssueMqtt(owner, owner, "local", login, GatewayPassword, Now.AddHours(-1));
+
+    /// <summary>An MQTT gateway tied to <paramref name="nodeNum"/> (online, or offline when <paramref name="online"/> is false).</summary>
+    public static MeshGateway BoundGateway(uint nodeNum = GatewayNodeNum, bool online = true, string login = GatewayLogin)
     {
-        var gateway = MeshGateway.Register(MeshGateway.PrimaryKey, "Tcp", Now.AddHours(-1));
-        gateway.ChangeStatus(status, "Tcp", status == GatewayStatus.Online ? null : "test", Now.AddHours(-1));
-        gateway.Identify(GatewayNodeNum, "2.7.26");
+        var gateway = PendingGateway(login: login);
+        gateway.Bind(nodeNum, Now.AddHours(-1));
+        gateway.RecordUplink("msh/EU_868", "LongFast", Now.AddHours(-1));
+        if (!online)
+        {
+            gateway.ChangeConnection(false, "test", Now.AddMinutes(-30));
+        }
+
         return gateway;
     }
+
+    /// <summary>"Gateway heard the hiker <paramref name="minutesAgo"/> minutes ago".</summary>
+    public static NodeReception Heard(
+        uint gatewayNodeNum = GatewayNodeNum, double minutesAgo = 5, int? hops = 1, double? snr = 5, uint nodeNum = HikerNodeNum) =>
+        NodeReception.Record(nodeNum, gatewayNodeNum, Now.AddMinutes(-minutesAgo), snr, -80, hops, Now);
+
+    public static GatewayRoute Route(uint gatewayNodeNum = GatewayNodeNum) =>
+        new(gatewayNodeNum, GatewayTransport.Mqtt, "local", GatewayLogin, "msh/EU_868", "LongFast");
 
     // ---- mocks
 
@@ -97,15 +127,69 @@ internal static class MeshTestHelpers
     {
         var nodes = new Mock<IMeshNodeRepository>();
         nodes.Setup(repo => repo.GetAsync(It.IsAny<uint>(), It.IsAny<CancellationToken>())).ReturnsAsync(node);
+        nodes.Setup(repo => repo.GetManyAsync(It.IsAny<IReadOnlyCollection<uint>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<uint> nodeNums, CancellationToken _) => node is not null && nodeNums.Contains(node.NodeNum) ? [node] : []);
         return nodes;
     }
 
-    public static Mock<IMeshGatewayRepository> GatewaysReturning(MeshGateway? gateway)
+    /// <summary>A gateway repository that knows exactly these gateways.</summary>
+    public static Mock<IMeshGatewayRepository> GatewaysWith(params MeshGateway[] known)
     {
         var gateways = new Mock<IMeshGatewayRepository>();
-        gateways.Setup(repo => repo.GetAsync(MeshGateway.PrimaryKey, It.IsAny<CancellationToken>())).ReturnsAsync(gateway);
+        gateways.Setup(repo => repo.GetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid id, CancellationToken _) => known.FirstOrDefault(gateway => gateway.Id == id));
+        gateways.Setup(repo => repo.GetActiveByNodeNumAsync(It.IsAny<uint>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((uint nodeNum, CancellationToken _) => known.FirstOrDefault(gateway => gateway.IsActive && gateway.NodeNum == nodeNum));
+        gateways.Setup(repo => repo.GetByMqttUserNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string login, CancellationToken _) => known.FirstOrDefault(gateway => gateway.MqttUserName == login));
+        gateways.Setup(repo => repo.GetActiveByNodeNumsAsync(It.IsAny<IReadOnlyCollection<uint>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<uint> nodeNums, CancellationToken _) =>
+                [.. known.Where(gateway => gateway.IsActive && gateway.NodeNum is { } nodeNum && nodeNums.Contains(nodeNum))]);
+        gateways.Setup(repo => repo.GetBoundAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([.. known.Where(gateway => gateway.IsActive && gateway.NodeNum is not null)]);
+        gateways.Setup(repo => repo.GetActiveMqttOnBrokerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([.. known.Where(gateway => gateway.IsActive && gateway.Transport == GatewayTransport.Mqtt)]);
+        gateways.Setup(repo => repo.GetCarryingChannelAsync(It.IsAny<string>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([.. known.Where(gateway => gateway.IsActive && gateway.NodeNum is not null)]);
+        gateways.Setup(repo => repo.GetChannelsAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, IReadOnlyList<string>>());
         return gateways;
     }
+
+    /// <summary>A team repository that knows exactly these teams.</summary>
+    public static Mock<ITeamRepository> TeamsWith(params Team[] known)
+    {
+        var teams = new Mock<ITeamRepository>();
+        teams.Setup(repo => repo.GetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid id, CancellationToken _) => known.FirstOrDefault(team => team.Id == id));
+        teams.Setup(repo => repo.GetByChannelNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string channel, CancellationToken _) => known.FirstOrDefault(team => team.ChannelName == channel));
+        teams.Setup(repo => repo.GetByJoinCodeAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string code, CancellationToken _) => known.FirstOrDefault(team => team.JoinCode == code));
+        teams.Setup(repo => repo.ChannelNameTakenAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string channel, CancellationToken _) => known.Any(team => team.ChannelName == channel));
+        teams.Setup(repo => repo.GetMemberIdsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid id, CancellationToken _) => [.. known.Where(team => team.Id == id).SelectMany(team => team.Members).Select(member => member.UserId)]);
+        return teams;
+    }
+
+    /// <summary>A team of <see cref="UserName"/> on channel "Alpha".</summary>
+    public static Team AlphaTeam(string owner = UserName) => Team.Create("Alpha", "Alpha", "JOINCODE", owner, owner, Now.AddDays(-1));
+
+    public static Mock<INodeReceptionRepository> ReceptionsOf(params NodeReception[] receptions)
+    {
+        var repository = new Mock<INodeReceptionRepository>();
+        repository.Setup(repo => repo.GetForNodeAsync(It.IsAny<uint>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((uint nodeNum, CancellationToken _) => [.. receptions.Where(reception => reception.NodeNum == nodeNum)]);
+        return repository;
+    }
+
+    public static MeshNodeStores Stores(
+        Mock<IMeshNodeRepository> nodes,
+        Mock<IMeshGatewayRepository>? gateways = null,
+        Mock<INodeReceptionRepository>? receptions = null,
+        Mock<INodeRegistrationRepository>? registrations = null) =>
+        new(nodes.Object, (receptions ?? ReceptionsOf()).Object, (gateways ?? GatewaysWith()).Object, (registrations ?? Registrations()).Object);
 
     /// <summary>Registrations repository with no registrations (unless set up otherwise by the test).</summary>
     public static Mock<INodeRegistrationRepository> Registrations(NodeRegistration? registration = null)
@@ -124,27 +208,30 @@ internal static class MeshTestHelpers
         NodeRegistration.Claim(HikerNodeNum, userId, userId, "Hiker", "HKR", GatewayPublicKey, null, "123456", at ?? Now);
 
     public static MeshMessage QueuedMessage(uint? to = HikerNodeNum, uint packetId = 4242) =>
-        MeshMessage.QueueOutbound(0, to, "Are you OK?", MessageKind.Text, packetId, GatewayNodeNum, UserName, Now.AddSeconds(-30));
+        MeshMessage.QueueOutbound(0, "LongFast", to, "Are you OK?", MessageKind.Text, packetId, GatewayNodeNum, VirtualNodeNum, UserName, UserName, Now.AddSeconds(-30));
 
     public static Mock<IMeshMessageRepository> MessagesReturning(MeshMessage? message)
     {
         var messages = new Mock<IMeshMessageRepository>();
         messages.Setup(repo => repo.GetAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(message);
         messages.Setup(repo => repo.GetOutboundByPacketIdAsync(It.IsAny<uint>(), It.IsAny<CancellationToken>())).ReturnsAsync(message);
+        messages.Setup(repo => repo.GetQueuedAsync(It.IsAny<uint>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
         return messages;
     }
 
-    public static Mock<IMeshGateway> MeshGatewayPort(uint packetId = 777)
+    public static Mock<IMeshOutbox> Outbox(uint packetId = 777)
     {
-        var port = new Mock<IMeshGateway>();
-        port.Setup(gateway => gateway.NewPacketId()).Returns(packetId);
-        return port;
+        var outbox = new Mock<IMeshOutbox>();
+        outbox.Setup(port => port.NewPacketId()).Returns(packetId);
+        outbox.SetupGet(port => port.VirtualNodeNum).Returns(VirtualNodeNum);
+        return outbox;
     }
 
-    public static Mock<ICurrentUser> CurrentUser()
+    public static Mock<ICurrentUser> CurrentUser(string name = UserName)
     {
         var currentUser = new Mock<ICurrentUser>();
-        currentUser.SetupGet(user => user.Name).Returns(UserName);
+        currentUser.SetupGet(user => user.Name).Returns(name);
+        currentUser.SetupGet(user => user.Id).Returns(name);
         return currentUser;
     }
 

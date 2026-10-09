@@ -1,5 +1,4 @@
 using FluentValidation;
-using Meshtrail.Core.Domain.Mesh;
 
 namespace Meshtrail.Core.Application.UseCases.Mesh.Queries.GetMessages;
 
@@ -11,9 +10,9 @@ public sealed class GetMessagesValidator : AbstractValidator<GetMessagesQuery>
     {
         RuleFor(query => query.Request.Page).GreaterThanOrEqualTo(1);
         RuleFor(query => query.Request.PageSize).InclusiveBetween(1, MaxPageSize);
-        RuleFor(query => query.Request.Channel).InclusiveBetween(0, MeshMessage.MaxChannelIndex);
+        RuleFor(query => query.Request.Node).NotEqual(0u).NotEqual(uint.MaxValue).When(query => query.Request.Node is not null);
         RuleFor(query => query.Request)
-            .Must(request => request.Channel is null != request.Node is null)
-            .WithMessage("Give exactly one of 'channel' or 'node'.");
+            .Must(request => request.Node is null != request.Team is null)
+            .WithMessage("Give exactly one of 'node' (a conversation) or 'team' (team chat).");
     }
 }

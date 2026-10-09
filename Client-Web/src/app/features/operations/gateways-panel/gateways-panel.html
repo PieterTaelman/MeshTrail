@@ -1,0 +1,154 @@
+<aside
+  class="flex h-full flex-col gap-4 overflow-y-auto rounded-xl border border-content-border bg-content p-4"
+  aria-label="My gateways"
+>
+  <header class="flex items-start justify-between gap-2">
+    <div>
+      <span class="app-eyebrow">My gateways</span>
+      <p class="text-xs text-muted-color">
+        Any node with WiFi can bring the mesh around it online. It connects to Meshtrail over MQTT.
+      </p>
+    </div>
+    <p-button
+      [text]="true"
+      [rounded]="true"
+      severity="secondary"
+      size="small"
+      ariaLabel="Close my gateways"
+      (onClick)="closed.emit()"
+    >
+      <ng-template #icon><svg data-p-icon="times" aria-hidden="true"></svg></ng-template>
+    </p-button>
+  </header>
+
+  <p-button label="Add gateway" size="small" [disabled]="busy()" (onClick)="add()" />
+
+  @if (error(); as message) {
+    <p-message severity="error" [text]="message" />
+  }
+
+  @if (credentials(); as credentials) {
+    <section
+      class="flex flex-col gap-2 rounded-lg border border-primary p-3 text-sm"
+      aria-label="Gateway setup"
+    >
+      <span class="app-eyebrow">Set up your node</span>
+      <p class="text-xs text-amber-500" role="alert">
+        Copy the password now: it is shown only this once. Lost it? Remove the gateway and add a new
+        one.
+      </p>
+      <p class="text-xs text-muted-color">
+        Meshtastic app → Settings → Module configuration → MQTT:
+      </p>
+      <dl class="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1 font-mono text-xs">
+        <dt class="text-muted-color">MQTT enabled</dt>
+        <dd>on</dd>
+        <dd></dd>
+        <dt class="text-muted-color">Address</dt>
+        <dd class="break-all">
+          {{ credentials.setup.serverAddress ?? fallbackAddress
+          }}{{ credentials.setup.port === 1883 ? '' : ':' + credentials.setup.port }}
+        </dd>
+        <dd></dd>
+        <dt class="text-muted-color">Username</dt>
+        <dd class="break-all">{{ credentials.userName }}</dd>
+        <dd>
+          <button
+            type="button"
+            class="text-primary"
+            (click)="copy('username', credentials.userName)"
+          >
+            {{ copied() === 'username' ? 'copied' : 'copy' }}
+          </button>
+        </dd>
+        <dt class="text-muted-color">Password</dt>
+        <dd class="break-all">{{ credentials.password }}</dd>
+        <dd>
+          <button
+            type="button"
+            class="text-primary"
+            (click)="copy('password', credentials.password)"
+          >
+            {{ copied() === 'password' ? 'copied' : 'copy' }}
+          </button>
+        </dd>
+        <dt class="text-muted-color">Encryption enabled</dt>
+        <dd>off</dd>
+        <dd></dd>
+        <dt class="text-muted-color">JSON enabled</dt>
+        <dd>off</dd>
+        <dd></dd>
+        <dt class="text-muted-color">TLS enabled</dt>
+        <dd>{{ credentials.setup.useTls ? 'on' : 'off' }}</dd>
+        <dd></dd>
+        <dt class="text-muted-color">Root topic</dt>
+        <dd class="break-all">{{ credentials.setup.root }}</dd>
+        <dd></dd>
+      </dl>
+      @if (!credentials.setup.serverAddress) {
+        <p class="text-xs text-muted-color">
+          The server has no public address configured. For a test on your own network, use the IP
+          address of the PC running Meshtrail (not "localhost").
+        </p>
+      }
+      <p class="text-xs text-muted-color">
+        Then Channels → your primary channel: <span class="font-mono">Uplink enabled</span> and
+        <span class="font-mono">Downlink enabled</span> on. The gateway turns Online with its first
+        message.
+      </p>
+    </section>
+  }
+
+  <ul class="flex flex-col gap-2" aria-label="Gateways">
+    @for (gateway of gateways.value() ?? []; track gateway.id) {
+      <li class="flex flex-col gap-1 rounded-lg border border-content-border p-2 text-sm">
+        <div class="flex items-center gap-2">
+          <span
+            class="size-2.5 shrink-0 rounded-full"
+            [style.background-color]="gatewayColor(gateway.status)"
+            aria-hidden="true"
+          ></span>
+          @if (gateway.nodeNum !== null) {
+            <button
+              type="button"
+              class="min-w-0 flex-1 truncate text-left hover:underline"
+              (click)="showNode.emit(gateway.nodeNum)"
+            >
+              {{ gateway.name }}
+            </button>
+          } @else {
+            <span class="min-w-0 flex-1 truncate text-muted-color">{{ gateway.name }}</span>
+          }
+          <span class="font-mono text-xs">{{ gateway.status.toUpperCase() }}</span>
+        </div>
+        <p class="font-mono text-xs text-muted-color">
+          {{ gateway.nodeId ?? gateway.mqttUserName }}
+          @if (gateway.lastUplinkAt) {
+            · last message {{ formatAge(gateway.lastUplinkAt, now()) }}
+          } @else {
+            · added {{ gateway.createdAt | date: 'd MMM HH:mm' }}
+          }
+          @if (gateway.channels.length > 0) {
+            · {{ gateway.channels.join(', ') }}
+          }
+        </p>
+        @if (gateway.lastError; as lastError) {
+          <p class="text-xs text-red-500">{{ lastError }}</p>
+        }
+        <div class="flex justify-end">
+          <p-button
+            [label]="confirmingId() === gateway.id ? 'Really remove?' : 'Remove'"
+            size="small"
+            [text]="true"
+            [severity]="confirmingId() === gateway.id ? 'danger' : 'secondary'"
+            (onClick)="remove(gateway)"
+          />
+        </div>
+      </li>
+    } @empty {
+      <li class="text-sm text-muted-color">
+        {{ gateways.isLoading() ? 'Loading…' : 'You have no gateways yet.' }}
+      </li>
+    }
+  </ul>
+</aside>

@@ -12,7 +12,7 @@
     <Name>Meshtrail.Database</Name>
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectVersion>4.1</ProjectVersion>
-    <ProjectGuid>{6F3C2A1E-8B4D-4E7A-9C55-2D1B7E0A4F91}</ProjectGuid>
+    <ProjectGuid>{6f3c2a1e-8b4d-4e7a-9c55-2d1b7e0a4f91}</ProjectGuid>
     <DSP>Microsoft.Data.Tools.Schema.Sql.Sql160DatabaseSchemaProvider</DSP>
     <OutputType>Database</OutputType>
     <RootPath>
@@ -69,10 +69,14 @@
   <ItemGroup>
     <Build Include="dbo\Tables\Samples.sql" />
     <Build Include="dbo\Tables\MeshGateways.sql" />
+    <Build Include="dbo\Tables\GatewayChannels.sql" />
     <Build Include="dbo\Tables\MeshNodes.sql" />
+    <Build Include="dbo\Tables\NodeReceptions.sql" />
     <Build Include="dbo\Tables\NodePositions.sql" />
     <Build Include="dbo\Tables\NodeTraceroutes.sql" />
     <Build Include="dbo\Tables\NodeRegistrations.sql" />
+    <Build Include="dbo\Tables\Teams.sql" />
+    <Build Include="dbo\Tables\TeamMembers.sql" />
     <Build Include="dbo\Tables\MeshMessages.sql" />
   </ItemGroup>
   <ItemGroup>

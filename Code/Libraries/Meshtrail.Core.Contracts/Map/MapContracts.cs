@@ -15,6 +15,8 @@ public sealed record MapFeaturesRequest
 public static class MapLayers
 {
     public const string Nodes = "nodes";
+
+    public const string Gateways = "gateways";
 }
 
 /// <summary>GeoJSON FeatureCollection (RFC 7946), so map libraries can use it as-is.</summary>

@@ -1,5 +1,5 @@
 <aside
-  class="flex h-full flex-col gap-4 rounded-xl border border-content-border bg-content p-4"
+  class="flex h-full flex-col gap-4 overflow-y-auto rounded-xl border border-content-border bg-content p-4"
   aria-label="Node detail"
 >
   <header class="flex items-start justify-between gap-2">
@@ -83,39 +83,65 @@
       <dd class="font-mono">{{ formatAge(node.firstSeenAt, now()) }}</dd>
     </dl>
 
-    @if (!node.isGateway) {
-      <div class="flex flex-wrap gap-2">
-        <p-button label="Message" size="small" (onClick)="messageNode.emit(node.nodeNum)" />
+    <div class="flex flex-wrap gap-2">
+      <p-button label="Message" size="small" (onClick)="messageNode.emit(node.nodeNum)" />
+      <p-button
+        label="Request position"
+        size="small"
+        severity="secondary"
+        [disabled]="busy()"
+        (onClick)="requestPosition()"
+      />
+      <p-button
+        label="Traceroute"
+        size="small"
+        severity="secondary"
+        [disabled]="busy()"
+        (onClick)="requestTraceroute()"
+      />
+      @if (!node.isRegistered) {
         <p-button
-          label="Request position"
+          label="Register"
           size="small"
           severity="secondary"
-          [disabled]="busy()"
-          (onClick)="requestPosition()"
+          [outlined]="true"
+          (onClick)="registerNode.emit()"
         />
-        <p-button
-          label="Traceroute"
-          size="small"
-          severity="secondary"
-          [disabled]="busy()"
-          (onClick)="requestTraceroute()"
-        />
-        @if (!node.isRegistered) {
-          <p-button
-            label="Register"
-            size="small"
-            severity="secondary"
-            [outlined]="true"
-            (onClick)="registerNode.emit()"
-          />
-        }
-      </div>
-      @if (node.isRegistered) {
-        <p class="font-mono text-xs text-primary">
-          REGISTERED · direct messages are end-to-end encrypted
-        </p>
       }
+    </div>
+    @if (node.isRegistered) {
+      <p class="font-mono text-xs text-primary">REGISTERED</p>
     }
+
+    <section class="flex flex-col gap-1 border-t border-content-border pt-3 text-sm">
+      <span class="app-eyebrow">Heard by</span>
+      @for (heard of heardBy(); track heard.gatewayNodeNum; let first = $first) {
+        <button
+          type="button"
+          class="flex items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-content-hover"
+          (click)="showNode.emit(heard.gatewayNodeNum)"
+        >
+          <span
+            class="size-2 shrink-0 rounded-full"
+            [class.bg-green-500]="heard.gatewayOnline"
+            [class.bg-surface-500]="!heard.gatewayOnline"
+            [attr.aria-label]="heard.gatewayOnline ? 'gateway online' : 'gateway offline'"
+          ></span>
+          <span class="min-w-0 flex-1 truncate">{{ heard.gatewayName }}</span>
+          <span class="font-mono text-xs text-muted-color">
+            {{ heard.hopsAway ?? '?' }} hop{{ heard.hopsAway === 1 ? '' : 's' }} ·
+            {{ formatNumber(heard.snr, 'dB') }} · {{ formatAge(heard.lastHeardAt, now()) }}
+          </span>
+          @if (first && heard.gatewayOnline) {
+            <span class="rounded border border-primary px-1 font-mono text-[10px] text-primary"
+              >VIA</span
+            >
+          }
+        </button>
+      } @empty {
+        <p class="text-xs text-muted-color">No gateway heard this node yet.</p>
+      }
+    </section>
 
     @if (notice(); as message) {
       <p-message severity="info" [text]="message" />

@@ -19,7 +19,10 @@ import { MeshApi } from '../mesh.api';
 import { formatAge, formatBattery, formatNumber, isOnline } from '../mesh-format';
 import { MESH_EVENTS, MeshNode, NodeTraceroute } from '../mesh.models';
 
-/** Right-hand panel: everything we know about one node, plus actions that send something to it. */
+/**
+ * Right-hand panel: everything we know about one node, the gateways that heard it, and actions that send something
+ * to it (through the best of those gateways).
+ */
 @Component({
   selector: 'app-node-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -38,6 +41,8 @@ export class NodeDetail {
   readonly messageNode = output<number>();
   /** The user wants to register this node to themselves. */
   readonly registerNode = output<void>();
+  /** The user clicked another node (a gateway in "Heard by"). */
+  readonly showNode = output<number>();
 
   protected readonly detail = rxResource({
     params: () => this.nodeNum(),
@@ -46,6 +51,8 @@ export class NodeDetail {
 
   protected readonly node = computed(() => this.detail.value()?.node);
   protected readonly traceroute = computed(() => this.detail.value()?.lastTraceroute ?? null);
+  /** Gateways that heard the node; the first one is the gateway messages go out through. */
+  protected readonly heardBy = computed(() => this.detail.value()?.heardBy ?? []);
   protected readonly online = computed(() =>
     isOnline(this.node()?.lastHeardAt ?? null, this.now()),
   );

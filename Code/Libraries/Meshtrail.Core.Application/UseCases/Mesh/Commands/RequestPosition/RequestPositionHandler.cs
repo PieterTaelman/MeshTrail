@@ -5,21 +5,21 @@ using Meshtrail.Core.Domain.Mesh;
 
 namespace Meshtrail.Core.Application.UseCases.Mesh.Commands.RequestPosition;
 
-/// <summary>Check the node exists and the gateway can send → queue the request.</summary>
+/// <summary>Check the node exists → pick the gateway that can reach it → queue the request there.</summary>
 public sealed class RequestPositionHandler(
     IMeshNodeRepository nodes,
+    INodeReceptionRepository receptions,
     IMeshGatewayRepository gateways,
-    IMeshGateway meshGateway) : ICommandHandler<RequestPositionCommand>
+    IMeshOutbox outbox,
+    TimeProvider timeProvider) : ICommandHandler<RequestPositionCommand>
 {
     public async ValueTask<Unit> Handle(RequestPositionCommand command, CancellationToken cancellationToken)
     {
         _ = await nodes.GetAsync(command.NodeNum, cancellationToken)
             ?? throw new KeyNotFoundException($"Node {MeshNode.FormatNodeId(command.NodeNum)} is not known.");
 
-        var gateway = await gateways.GetAsync(MeshGateway.PrimaryKey, cancellationToken);
-        MeshGateway.EnsureCanSend(gateway);
-
-        meshGateway.Enqueue(new PositionRequest(command.NodeNum, meshGateway.NewPacketId()));
+        var via = await GatewayRoutes.PickAsync(receptions, gateways, command.NodeNum, timeProvider.GetUtcNow(), cancellationToken);
+        outbox.Enqueue(new PositionRequest(via, command.NodeNum, outbox.NewPacketId()));
         return Unit.Value;
     }
 }

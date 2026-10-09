@@ -4,30 +4,49 @@ import type { FeatureCollection, Point } from 'geojson';
 import { Observable } from 'rxjs';
 import { API_BASE_URL, API_V1 } from '../../core/api/api-config';
 import {
-  GatewayStatus,
+  BoundingBox,
+  Gateway,
+  GatewayCredentials,
+  GatewaySummary,
   MeshMessage,
   MeshNode,
   MessageListRequest,
-  Registration,
-  SendMessageRequest,
   NodeDetail,
   NodeListRequest,
   NodeTraceroute,
   PagedResult,
+  Registration,
+  SendMessageRequest,
+  Team,
 } from './mesh.models';
 
-/** Thin HTTP wrapper around the gateway, nodes and map endpoints. No state here. */
+/** "west,south,east,north" as the API expects it (6 decimals ≈ 10 cm is plenty). */
+export function formatBbox(box: BoundingBox): string {
+  return box.map((value) => value.toFixed(6)).join(',');
+}
+
+/** Thin HTTP wrapper around the gateways, nodes, messages and map endpoints. No state here. */
 @Injectable({ providedIn: 'root' })
 export class MeshApi {
   private readonly http = inject(HttpClient);
   private readonly url = `${inject(API_BASE_URL)}${API_V1}`;
 
-  getGateway(): Observable<GatewayStatus> {
-    return this.http.get<GatewayStatus>(`${this.url}/gateway`);
+  /** mine = true: my gateways (pending ones included); otherwise every active gateway. */
+  getGateways(mine: boolean): Observable<Gateway[]> {
+    return this.http.get<Gateway[]>(`${this.url}/gateways`, { params: { mine } });
   }
 
-  reconnectGateway(): Observable<void> {
-    return this.http.post<void>(`${this.url}/gateway/reconnect`, null);
+  getGatewaySummary(): Observable<GatewaySummary> {
+    return this.http.get<GatewaySummary>(`${this.url}/gateways/summary`);
+  }
+
+  /** New MQTT credentials; the password is only in this answer. */
+  addGateway(): Observable<GatewayCredentials> {
+    return this.http.post<GatewayCredentials>(`${this.url}/gateways`, null);
+  }
+
+  revokeGateway(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.url}/gateways/${id}`);
   }
 
   getNodes(request: NodeListRequest): Observable<PagedResult<MeshNode>> {
@@ -40,6 +59,12 @@ export class MeshApi {
     }
     if (request.online !== undefined) {
       params = params.set('online', request.online);
+    }
+    if (request.bbox) {
+      params = params.set('bbox', formatBbox(request.bbox));
+    }
+    if (request.mine) {
+      params = params.set('owner', 'me');
     }
     return this.http.get<PagedResult<MeshNode>>(`${this.url}/nodes`, { params });
   }
@@ -58,17 +83,37 @@ export class MeshApi {
 
   getMessages(request: MessageListRequest): Observable<PagedResult<MeshMessage>> {
     let params = new HttpParams().set('page', request.page).set('pageSize', request.pageSize);
-    if (request.channel !== undefined) {
-      params = params.set('channel', request.channel);
-    }
     if (request.node !== undefined) {
       params = params.set('node', request.node);
+    }
+    if (request.team !== undefined) {
+      params = params.set('team', request.team);
     }
     return this.http.get<PagedResult<MeshMessage>>(`${this.url}/messages`, { params });
   }
 
   sendMessage(request: SendMessageRequest): Observable<MeshMessage> {
     return this.http.post<MeshMessage>(`${this.url}/messages`, request);
+  }
+
+  getTeams(): Observable<Team[]> {
+    return this.http.get<Team[]>(`${this.url}/teams`);
+  }
+
+  createTeam(name: string, channelName: string): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/teams`, { name, channelName });
+  }
+
+  joinTeam(code: string): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/teams/join`, { code });
+  }
+
+  renewJoinCode(id: string): Observable<Team> {
+    return this.http.post<Team>(`${this.url}/teams/${id}/join-code`, null);
+  }
+
+  leaveTeam(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.url}/teams/${id}/members/me`);
   }
 
   getMyRegistrations(): Observable<Registration[]> {
@@ -87,9 +132,15 @@ export class MeshApi {
     return this.http.delete<void>(`${this.url}/registrations/${id}`);
   }
 
-  /** GeoJSON of the given map layers (all layers when empty). */
-  getMapFeatures(layers: string[]): Observable<FeatureCollection<Point>> {
-    const params = layers.length > 0 ? new HttpParams().set('layers', layers.join(',')) : undefined;
+  /** GeoJSON of the given map layers (all layers when empty), optionally only inside a map view. */
+  getMapFeatures(layers: string[], bbox?: BoundingBox): Observable<FeatureCollection<Point>> {
+    let params = new HttpParams();
+    if (layers.length > 0) {
+      params = params.set('layers', layers.join(','));
+    }
+    if (bbox) {
+      params = params.set('bbox', formatBbox(bbox));
+    }
     return this.http.get<FeatureCollection<Point>>(`${this.url}/map/features`, { params });
   }
 }

@@ -14,6 +14,7 @@ import type { FeatureCollection, Point } from 'geojson';
 import {
   type GeoJSONSource,
   Map as MapLibreMap,
+  type MapGeoJSONFeature,
   type MapLayerMouseEvent,
   NavigationControl,
   ScaleControl,
@@ -27,12 +28,19 @@ import { MAP_STYLE } from './map-style';
  */
 export type MapFeatures = FeatureCollection<Point>;
 
-const SOURCE = 'features';
+/** The visible area: [west, south, east, north] in degrees. */
+export type MapBounds = [number, number, number, number];
+
+const POINTS_SOURCE = 'features';
+const MARKERS_SOURCE = 'markers';
+const CLUSTERS = 'features-clusters';
+const CLUSTER_COUNT = 'features-cluster-count';
 const POINTS = 'features-points';
+const MARKERS = 'markers-rings';
 const SELECTED = 'features-selected';
 const EMPTY: MapFeatures = { type: 'FeatureCollection', features: [] };
 
-/** Belgium, until we have data to zoom to. */
+/** Belgium, where the first gateways are. */
 const START_CENTER: [number, number] = [4.47, 50.5];
 
 // The MapLibre worker is copied to /maplibre by angular.json (bundlers cannot find it on their own).
@@ -46,7 +54,8 @@ function configureWorker(): void {
 
 /**
  * The ONLY component that talks to MapLibre, so the map library can be swapped in one place.
- * Draws point features coloured by their `color` property and reports clicks.
+ * Draws two kinds of points: `features` (many, grouped into numbered clusters when zoomed out) and `markers`
+ * (few, e.g. gateways: a coloured ring, never clustered). Reports clicks and the visible area.
  */
 @Component({
   selector: 'app-map-view',
@@ -56,16 +65,18 @@ function configureWorker(): void {
 })
 export class MapView {
   readonly features = input<MapFeatures>(EMPTY);
+  readonly markers = input<MapFeatures>(EMPTY);
   /** Id of the feature to highlight, or null. */
   readonly selectedId = input<string | null>(null);
-  /** Emits the id of the clicked feature. */
+  /** Emits the id of the clicked feature or marker. */
   readonly featureClick = output<string>();
+  /** Emits the visible area after every move (and once when the map is ready), to load data per view. */
+  readonly boundsChange = output<MapBounds>();
 
   private readonly container = viewChild.required<ElementRef<HTMLDivElement>>('container');
   private readonly style = inject(MAP_STYLE);
   private map?: MapLibreMap;
   private loaded = false;
-  private fittedOnce = false;
 
   constructor() {
     afterNextRender(() => this.createMap());
@@ -74,7 +85,14 @@ export class MapView {
     effect(() => {
       const features = this.features();
       if (this.loaded) {
-        this.showFeatures(features);
+        this.setData(POINTS_SOURCE, features);
+      }
+    });
+
+    effect(() => {
+      const markers = this.markers();
+      if (this.loaded) {
+        this.setData(MARKERS_SOURCE, markers);
       }
     });
 
@@ -104,54 +122,128 @@ export class MapView {
     map.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-left');
 
     map.on('load', () => {
-      map.addSource(SOURCE, { type: 'geojson', data: EMPTY, promoteId: 'featureId' });
-      map.addLayer({
-        id: SELECTED,
-        type: 'circle',
-        source: SOURCE,
-        filter: ['==', ['id'], ''],
-        paint: {
-          'circle-radius': ['+', ['coalesce', ['get', 'radius'], 7], 6],
-          'circle-color': 'rgba(255,255,255,0.25)',
-          'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 2,
-        },
-      });
-      map.addLayer({
-        id: POINTS,
-        type: 'circle',
-        source: SOURCE,
-        paint: {
-          'circle-radius': ['coalesce', ['get', 'radius'], 7],
-          'circle-color': ['coalesce', ['get', 'color'], '#64748b'],
-          'circle-stroke-color': '#0f172a',
-          'circle-stroke-width': 1.5,
-        },
-      });
+      this.addLayers(map);
+      this.loaded = true;
+      this.setData(POINTS_SOURCE, this.features());
+      this.setData(MARKERS_SOURCE, this.markers());
+      map.setFilter(SELECTED, ['==', ['id'], this.selectedId() ?? '']);
+      this.emitBounds(map);
+    });
+    map.on('moveend', () => this.emitBounds(map));
 
-      map.on('click', POINTS, (event: MapLayerMouseEvent) => {
+    this.map = map;
+  }
+
+  private addLayers(map: MapLibreMap): void {
+    // Zoomed out, nearby nodes merge into one numbered circle; zooming in splits them again.
+    map.addSource(POINTS_SOURCE, {
+      type: 'geojson',
+      data: EMPTY,
+      promoteId: 'featureId',
+      cluster: true,
+      clusterRadius: 40,
+      clusterMaxZoom: 12,
+    });
+    map.addSource(MARKERS_SOURCE, { type: 'geojson', data: EMPTY, promoteId: 'featureId' });
+
+    map.addLayer({
+      id: CLUSTERS,
+      type: 'circle',
+      source: POINTS_SOURCE,
+      filter: ['has', 'point_count'],
+      paint: {
+        'circle-color': 'rgba(34,197,94,0.75)',
+        'circle-radius': ['step', ['get', 'point_count'], 14, 10, 18, 100, 24, 1000, 30],
+        'circle-stroke-color': '#0f172a',
+        'circle-stroke-width': 1.5,
+      },
+    });
+    // Numbers need a font; styles without one (glyphs) simply show the circles.
+    if (map.getStyle().glyphs) {
+      map.addLayer({
+        id: CLUSTER_COUNT,
+        type: 'symbol',
+        source: POINTS_SOURCE,
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': ['get', 'point_count_abbreviated'],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': 12,
+        },
+        paint: { 'text-color': '#0f172a' },
+      });
+    }
+    map.addLayer({
+      id: SELECTED,
+      type: 'circle',
+      source: POINTS_SOURCE,
+      filter: ['==', ['id'], ''],
+      paint: {
+        'circle-radius': ['+', ['coalesce', ['get', 'radius'], 7], 6],
+        'circle-color': 'rgba(255,255,255,0.25)',
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 2,
+      },
+    });
+    map.addLayer({
+      id: POINTS,
+      type: 'circle',
+      source: POINTS_SOURCE,
+      filter: ['!', ['has', 'point_count']],
+      paint: {
+        'circle-radius': ['coalesce', ['get', 'radius'], 7],
+        'circle-color': ['coalesce', ['get', 'color'], '#64748b'],
+        'circle-stroke-color': '#0f172a',
+        'circle-stroke-width': 1.5,
+      },
+    });
+    map.addLayer({
+      id: MARKERS,
+      type: 'circle',
+      source: MARKERS_SOURCE,
+      paint: {
+        'circle-radius': ['coalesce', ['get', 'radius'], 11],
+        'circle-color': 'rgba(15,23,42,0.35)',
+        'circle-stroke-color': ['coalesce', ['get', 'color'], '#64748b'],
+        'circle-stroke-width': 3,
+      },
+    });
+
+    for (const layer of [POINTS, MARKERS]) {
+      map.on('click', layer, (event: MapLayerMouseEvent) => {
         const id = event.features?.[0]?.properties?.['featureId'];
         if (typeof id === 'string') {
           this.featureClick.emit(id);
         }
       });
-      map.on('mouseenter', POINTS, () => (map.getCanvas().style.cursor = 'pointer'));
-      map.on('mouseleave', POINTS, () => (map.getCanvas().style.cursor = ''));
-
-      this.loaded = true;
-      this.showFeatures(this.features());
-      map.setFilter(SELECTED, ['==', ['id'], this.selectedId() ?? '']);
-    });
-
-    this.map = map;
+    }
+    map.on(
+      'click',
+      CLUSTERS,
+      (event: MapLayerMouseEvent) => void this.zoomIntoCluster(map, event.features?.[0]),
+    );
+    for (const layer of [POINTS, MARKERS, CLUSTERS]) {
+      map.on('mouseenter', layer, () => (map.getCanvas().style.cursor = 'pointer'));
+      map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
+    }
   }
 
-  private showFeatures(features: MapFeatures): void {
-    const map = this.map;
-    if (!map) {
+  private async zoomIntoCluster(
+    map: MapLibreMap,
+    cluster: MapGeoJSONFeature | undefined,
+  ): Promise<void> {
+    const clusterId = cluster?.properties?.['cluster_id'];
+    if (typeof clusterId !== 'number' || cluster?.geometry.type !== 'Point') {
       return;
     }
+    const source = map.getSource(POINTS_SOURCE) as GeoJSONSource | undefined;
+    const zoom = await source?.getClusterExpansionZoom(clusterId);
+    if (zoom !== undefined) {
+      map.easeTo({ center: cluster.geometry.coordinates as [number, number], zoom });
+    }
+  }
 
+  private setData(sourceId: string, features: MapFeatures): void {
     // MapLibre needs the id inside the properties to report it on click (promoteId).
     const data: MapFeatures = {
       type: 'FeatureCollection',
@@ -160,28 +252,24 @@ export class MapView {
         properties: { ...feature.properties, featureId: String(feature.id) },
       })),
     };
-    void (map.getSource(SOURCE) as GeoJSONSource | undefined)?.setData(data);
+    void (this.map?.getSource(sourceId) as GeoJSONSource | undefined)?.setData(data);
+  }
 
-    // Zoom to the data the first time there is any; after that the user controls the camera.
-    if (!this.fittedOnce && data.features.length > 0) {
-      this.fittedOnce = true;
-      const [first, ...rest] = data.features.map((feature) => feature.geometry.coordinates);
-      const bounds = rest.reduce(
-        (box, [lng, lat]) => [
-          Math.min(box[0], lng),
-          Math.min(box[1], lat),
-          Math.max(box[2], lng),
-          Math.max(box[3], lat),
-        ],
-        [first[0], first[1], first[0], first[1]],
-      );
-      map.fitBounds(
-        [
-          [bounds[0], bounds[1]],
-          [bounds[2], bounds[3]],
-        ],
-        { padding: 60, maxZoom: 13, duration: 0 },
-      );
-    }
+  private emitBounds(map: MapLibreMap): void {
+    const bounds = map.getBounds();
+
+    // Panning far east or west gives longitudes beyond ±180; wrap them back.
+    const west =
+      bounds.getWest() < -180 || bounds.getEast() - bounds.getWest() >= 360
+        ? -180
+        : bounds.getWest();
+    const east =
+      bounds.getEast() > 180 || bounds.getEast() - bounds.getWest() >= 360 ? 180 : bounds.getEast();
+    this.boundsChange.emit([
+      west,
+      Math.max(bounds.getSouth(), -90),
+      east,
+      Math.min(bounds.getNorth(), 90),
+    ]);
   }
 }

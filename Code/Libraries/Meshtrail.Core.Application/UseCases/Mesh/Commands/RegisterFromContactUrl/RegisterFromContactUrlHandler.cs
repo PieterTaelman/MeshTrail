@@ -9,16 +9,17 @@ using Meshtrail.Core.Domain.Mesh;
 namespace Meshtrail.Core.Application.UseCases.Mesh.Commands.RegisterFromContactUrl;
 
 /// <summary>
-/// Parse the link → make sure the node exists → clear an old claim that may be replaced → store a Claimed
-/// registration and a direct message with the code → hand the message to the gateway.
+/// Parse the link → the node must have been heard by a gateway → clear an old claim that may be replaced → store a
+/// Claimed registration and a direct message with the code → hand the message to the best gateway.
 /// </summary>
 public sealed class RegisterFromContactUrlHandler(
     IContactUrlParser parser,
     IMeshNodeRepository nodes,
+    INodeReceptionRepository receptions,
     IMeshGatewayRepository gateways,
     INodeRegistrationRepository registrations,
     IMeshMessageRepository messages,
-    IMeshGateway meshGateway,
+    IMeshOutbox outbox,
     IVerificationCodeGenerator codes,
     ICurrentUser currentUser,
     TimeProvider timeProvider,
@@ -32,12 +33,15 @@ public sealed class RegisterFromContactUrlHandler(
             throw new DomainException(error);
         }
 
-        var gateway = await gateways.GetAsync(MeshGateway.PrimaryKey, cancellationToken);
-        MeshGateway.EnsureCanSend(gateway);
+        // The code travels over the mesh, so a gateway must have heard the node.
+        var node = await nodes.GetAsync(contact.NodeNum, cancellationToken)
+            ?? throw new DomainException(
+                $"Node {MeshNode.FormatNodeId(contact.NodeNum)} has not been heard by any gateway yet. Switch it on near a gateway and try again in a few minutes.");
 
         var now = timeProvider.GetUtcNow();
+        var via = await GatewayRoutes.PickAsync(receptions, gateways, contact.NodeNum, now, cancellationToken);
+
         var userId = currentUser.StableId();
-        var node = await GetOrDiscoverNodeAsync(contact, now, cancellationToken);
         await ReleaseOldClaimAsync(contact.NodeNum, userId, now, cancellationToken);
 
         var code = codes.NewCode();
@@ -47,11 +51,14 @@ public sealed class RegisterFromContactUrlHandler(
 
         var message = MeshMessage.QueueOutbound(
             0,
+            via.Channel,
             contact.NodeNum,
             $"Meshtrail verification code: {code}. Valid {NodeRegistration.CodeLifetime.TotalMinutes:0} minutes.",
             MessageKind.Verification,
-            meshGateway.NewPacketId(),
-            gateway!.NodeNum,
+            outbox.NewPacketId(),
+            via.GatewayNodeNum,
+            via.SenderFor(outbox),
+            userId,
             currentUser.Name,
             now);
         registration.LinkVerificationMessage(message.Id);
@@ -60,26 +67,9 @@ public sealed class RegisterFromContactUrlHandler(
         await messages.AddAsync(message, cancellationToken);
         await registrations.SaveChangesAsync(cancellationToken);
 
-        meshGateway.Enqueue(MeshMessaging.ToRequest(message));
+        outbox.Enqueue(MeshMessaging.ToRequest(message, via));
         await publisher.Publish(new MessageStatusChangedNotification(message.ToDto()), cancellationToken);
         return registration.ToDto(message.Status);
-    }
-
-    private async Task<MeshNode> GetOrDiscoverNodeAsync(ParsedContact contact, DateTimeOffset now, CancellationToken cancellationToken)
-    {
-        var node = await nodes.GetAsync(contact.NodeNum, cancellationToken);
-        if (node is not null)
-        {
-            return node;
-        }
-
-        // Not heard yet: create it so the registration has a node. Names from the link are only a first guess;
-        // the key is not copied (only the node's own broadcast is trusted for that).
-        node = MeshNode.Discover(contact.NodeNum, now);
-        node.ApplyUser(contact.LongName, contact.ShortName, contact.HardwareModel, contact.Role, null, now);
-        await nodes.AddAsync(node, cancellationToken);
-        await nodes.SaveChangesAsync(cancellationToken);
-        return node;
     }
 
     /// <summary>One registration per node: an expired claim or our own earlier claim is replaced; anything else blocks.</summary>
