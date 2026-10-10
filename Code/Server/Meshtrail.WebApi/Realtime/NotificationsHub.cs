@@ -4,8 +4,10 @@ namespace Meshtrail.WebApi.Realtime;
 
 /// <summary>
 /// One hub for server-to-client pushes. Clients change data through the REST API; the only thing they tell the hub
-/// is which map area they look at (<see cref="WatchArea"/>), so they only get node changes nearby.
+/// is which map area they look at (<see cref="WatchArea"/>), so they only get node changes nearby. Anonymous
+/// visitors may connect (the map is public); messages only go to signed-in users (Clients.Users).
 /// </summary>
+[Microsoft.AspNetCore.Authorization.AllowAnonymous]
 public sealed class NotificationsHub : Hub
 {
     public const string Path = "/hubs/notifications";

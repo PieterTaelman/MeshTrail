@@ -53,8 +53,11 @@ public sealed class NodeRegistration
 
     public RegistrationStatus Status { get; private set; }
 
-    /// <summary>Public key from the contact link; handed to the gateway after verification.</summary>
-    public byte[] PublicKey { get; private set; } = [];
+    /// <summary>
+    /// Public key from the contact link (or the node's own broadcast); handed to TCP gateways after verification.
+    /// Null for a node registered through its gateway login when we have not heard its key yet.
+    /// </summary>
+    public byte[]? PublicKey { get; private set; }
 
     public string LongName { get; private set; } = string.Empty;
 
@@ -128,13 +131,40 @@ public sealed class NodeRegistration
         return registration;
     }
 
+    /// <summary>
+    /// A node proven by its gateway login: the owner put the credentials into this node and it uplinked with them,
+    /// so no code is needed. Used for a new gateway's own node.
+    /// </summary>
+    public static NodeRegistration VerifiedByGateway(
+        uint nodeNum, string userId, string userName, string? longName, string? shortName, byte[]? publicKey, DateTimeOffset now)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new DomainException("A registration must be linked to a user.");
+        }
+
+        return new NodeRegistration
+        {
+            Id = Guid.CreateVersion7(now),
+            NodeNum = nodeNum,
+            UserId = Cut(userId),
+            UserName = Cut(string.IsNullOrWhiteSpace(userName) ? userId : userName),
+            Status = RegistrationStatus.Verified,
+            PublicKey = publicKey is { Length: MeshNode.PublicKeyLength } ? publicKey : null,
+            LongName = UntrustedText.Clean(longName, MeshNode.LongNameMaxLength) ?? MeshNode.FormatNodeId(nodeNum),
+            ShortName = UntrustedText.Clean(shortName, MeshNode.ShortNameMaxLength) ?? MeshNode.FormatNodeId(nodeNum)[^4..],
+            ClaimedAt = now,
+            VerifiedAt = now,
+        };
+    }
+
     public static NodeRegistration Rehydrate(
         Guid id,
         uint nodeNum,
         string userId,
         string userName,
         RegistrationStatus status,
-        byte[] publicKey,
+        byte[]? publicKey,
         string longName,
         string shortName,
         byte[]? codeHash,

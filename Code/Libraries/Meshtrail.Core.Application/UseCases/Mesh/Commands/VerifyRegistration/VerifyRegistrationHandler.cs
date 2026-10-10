@@ -46,10 +46,10 @@ public sealed class VerifyRegistrationHandler(
 
         foreach (var gateway in await stores.Gateways.GetBoundAsync(cancellationToken))
         {
-            if (gateway is { Transport: GatewayTransport.Tcp, CanSend: true })
+            if (gateway is { Transport: GatewayTransport.Tcp, CanSend: true } && registration.PublicKey is { } key)
             {
                 outbox.Enqueue(new AddContactRequest(
-                    gateway.ToRoute(), registration.NodeNum, outbox.NewPacketId(), registration.LongName, registration.ShortName, registration.PublicKey));
+                    gateway.ToRoute(), registration.NodeNum, outbox.NewPacketId(), registration.LongName, registration.ShortName, key));
             }
         }
 

@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Meshtastic.Protobufs;
 using Meshtrail.Core.Contracts.Mesh;
 using Meshtrail.Core.IntegrationTests.Infrastructure;
+using Microsoft.AspNetCore.Mvc;
 using Shouldly;
 using static Meshtrail.Core.IntegrationTests.Mesh.MeshApiTestHelpers;
 
@@ -20,12 +21,15 @@ public sealed class GatewaysApiTests
         // Arrange
         using var client = ClientAs($"owner-{UniqueName()}");
 
+        var nodeNum = UniqueNodeNum();
+
         // Act
-        var response = await client.PostAsync(GatewaysUrl, null);
+        var response = await client.PostAsJsonAsync(GatewaysUrl, new AddGatewayRequest(nodeNum));
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
         var credentials = (await response.Content.ReadFromJsonAsync<GatewayCredentialsDto>())!;
+        credentials.Gateway.NodeNum.ShouldBe(nodeNum);
         credentials.UserName.ShouldStartWith("gw-");
         credentials.Password.Length.ShouldBe(24);
         credentials.Gateway.Status.ShouldBe("Pending");
@@ -47,6 +51,53 @@ public sealed class GatewaysApiTests
         mine.Channels.ShouldBe([FakeGatewayTransport.Channel]);
         mine.MqttUserName.ShouldBe(gateway.Login);
         mine.Name.ShouldStartWith("GW ");
+    }
+
+    [TestMethod]
+    public async Task Add_SameNodeTwice_Returns422UntilTheFirstIsRemoved()
+    {
+        // Arrange
+        using var owner = ClientAs($"owner-{UniqueName()}");
+        var nodeNum = UniqueNodeNum();
+        var first = (await (await owner.PostAsJsonAsync(GatewaysUrl, new AddGatewayRequest(nodeNum))).Content.ReadFromJsonAsync<GatewayCredentialsDto>())!;
+
+        // Act
+        var again = await owner.PostAsJsonAsync(GatewaysUrl, new AddGatewayRequest(nodeNum));
+        await owner.DeleteAsync($"{GatewaysUrl}/{first.Gateway.Id}");
+        var afterRemove = await owner.PostAsJsonAsync(GatewaysUrl, new AddGatewayRequest(nodeNum));
+
+        // Assert
+        again.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        (await again.Content.ReadFromJsonAsync<ProblemDetails>())!.Detail!.ShouldContain("Remove it first");
+        afterRemove.StatusCode.ShouldBe(HttpStatusCode.Created);
+    }
+
+    [TestMethod]
+    public async Task FirstUplink_RegistersTheGatewayNodeToItsOwner()
+    {
+        // Act
+        var gateway = await AddOnlineGatewayAsync();
+
+        // Assert
+        using var owner = ClientAs(gateway.Owner);
+        var mine = await owner.GetFromJsonAsync<List<RegistrationDto>>("/api/v1/registrations");
+        mine!.ShouldContain(registration => registration.NodeNum == gateway.NodeNum && registration.Status == "Verified");
+    }
+
+    [TestMethod]
+    public async Task Anonymous_CanSeeTheMapButNotAddAGateway()
+    {
+        // Arrange
+        using var anonymous = AssemblySetup.Factory.CreateClient();
+        anonymous.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "not-a-valid-token");
+
+        // Act
+        var summary = await AssemblySetup.Factory.CreateClient().GetAsync($"{GatewaysUrl}/summary");
+        var add = await anonymous.PostAsJsonAsync(GatewaysUrl, new AddGatewayRequest(UniqueNodeNum()));
+
+        // Assert
+        summary.StatusCode.ShouldBe(HttpStatusCode.OK);
+        add.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
     [TestMethod]
@@ -154,7 +205,7 @@ public sealed class GatewaysApiTests
     {
         // Arrange
         using var client = ClientAs($"owner-{UniqueName()}");
-        var credentials = (await (await client.PostAsync(GatewaysUrl, null)).Content.ReadFromJsonAsync<GatewayCredentialsDto>())!;
+        var credentials = (await (await client.PostAsJsonAsync(GatewaysUrl, new AddGatewayRequest(UniqueNodeNum()))).Content.ReadFromJsonAsync<GatewayCredentialsDto>())!;
 
         // Act
         var allowed = await AuthenticateAsync(credentials.UserName, credentials.Password, MeshtrailApiFactory.ServiceKey);

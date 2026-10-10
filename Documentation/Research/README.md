@@ -11,3 +11,4 @@ the code — read them as history. Name files `YYYY-MM-DD-short-topic.md`.
 | 2026-10-06 | [MQTT broker as its own service](2026-10-06-mqtt-broker-service.md) |
 | 2026-10-06 | [Multi-gateway core](2026-10-06-multi-gateway-core.md) |
 | 2026-10-09 | [Teams and private chat](2026-10-09-teams-private-chat.md) |
+| 2026-10-10 | [User accounts](2026-10-10-user-accounts.md) |

@@ -47,12 +47,28 @@ Or press F5 on `Meshtrail.AppHost` in Visual Studio / Rider. The Aspire dashboar
 
 Dashboard command **Rebuild database** (on `MeshtrailDatabase`) drops all local data and rebuilds from scratch.
 
+### Accounts
+
+Open http://localhost:3000 → **Register** (email, first name, last name, password). The confirmation mail lands in
+**MailPit** (link in the dashboard); its link confirms the address, then sign in. Without the AppHost/Docker the mail,
+link included, is written to the API log. The map is public; chat, nodes, gateways and teams need an account.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Authentication:Mode` | `Local` | Our own accounts and tokens (`Development` is for tests) |
+| `Authentication:Local:SigningKey` | — (dev key in Development) | Token signing key, at least 32 characters. Secret |
+| `Authentication:Local:ClientBaseUrl` | `http://localhost:3000` | Where links in mails point to |
+| `Email:From` / `SmtpHost` / `SmtpPort` | — | SMTP server; MailPit is used automatically under the AppHost |
+
+More: [Documentation/Accounts/README.md](Documentation/Accounts/README.md).
+
 ### Mesh gateways (Meshtastic)
 
 In Development the API runs a **simulated** mesh (3 fake gateways and 5 hikers around Belgium) and logs in to the
-local MQTT broker, so no hardware is needed. To connect a real node as a gateway: Operations → **My gateways** →
-**Add gateway**, then enter the shown login, password and your PC's LAN IP in the node's MQTT settings (encryption
-off, uplink/downlink on for the primary channel). Group chat happens in **Teams**, each on its own channel.
+local MQTT broker, so no hardware is needed. To connect a real node as a gateway: **Profile → My gateways**, choose
+the node (or type its `!id`), then enter the shown login, password and your PC's LAN IP in the node's MQTT settings
+(encryption off, uplink/downlink on for the primary channel). The login only works for that node. Group chat happens
+in **My teams**, each team on its own channel.
 
 | Key | Default | Meaning |
 |---|---|---|

@@ -9,19 +9,62 @@
         Any node with WiFi can bring the mesh around it online. It connects to Meshtrail over MQTT.
       </p>
     </div>
-    <p-button
-      [text]="true"
-      [rounded]="true"
-      severity="secondary"
-      size="small"
-      ariaLabel="Close my gateways"
-      (onClick)="closed.emit()"
-    >
-      <ng-template #icon><svg data-p-icon="times" aria-hidden="true"></svg></ng-template>
-    </p-button>
+    @if (closable()) {
+      <p-button
+        [text]="true"
+        [rounded]="true"
+        severity="secondary"
+        size="small"
+        ariaLabel="Close my gateways"
+        (onClick)="closed.emit()"
+      >
+        <ng-template #icon><svg data-p-icon="times" aria-hidden="true"></svg></ng-template>
+      </p-button>
+    }
   </header>
 
-  <p-button label="Add gateway" size="small" [disabled]="busy()" (onClick)="add()" />
+  <form
+    class="flex flex-col gap-2 rounded-lg border border-content-border p-3"
+    aria-label="Add a gateway"
+    (submit)="$event.preventDefault(); add()"
+  >
+    <span class="app-eyebrow">Add a gateway</span>
+    <label class="flex flex-col gap-1 text-xs text-muted-color">
+      Which node? Each gateway gets its own login, so several gateways on one network are fine.
+      <select
+        class="rounded-md border border-content-border bg-content px-2 py-1.5 text-sm text-foreground"
+        [value]="choice() || (candidates().length ? candidates()[0].nodeNum : 'other')"
+        (change)="choice.set($any($event.target).value)"
+      >
+        @for (node of candidates(); track node.nodeNum) {
+          <option [value]="node.nodeNum">{{ node.longName }} ({{ node.nodeId }})</option>
+        }
+        <option value="other">Another node: type its id</option>
+      </select>
+    </label>
+    @if (showTypedId()) {
+      <label class="flex flex-col gap-1 text-xs text-muted-color">
+        Node id (Meshtastic app → the node → "!" + 8 characters). Its first message proves it is
+        yours.
+        <input
+          class="rounded-md border border-content-border bg-content px-2 py-1.5 font-mono text-sm text-foreground"
+          placeholder="!f115aaec"
+          [value]="typedId()"
+          (input)="typedId.set($any($event.target).value)"
+        />
+      </label>
+    }
+    <p-button
+      type="submit"
+      [label]="
+        chosenNodeNum() !== null
+          ? 'Make ' + formatNodeId(chosenNodeNum()!) + ' a gateway'
+          : 'Add gateway'
+      "
+      size="small"
+      [disabled]="busy() || chosenNodeNum() === null"
+    />
+  </form>
 
   @if (error(); as message) {
     <p-message severity="error" [text]="message" />

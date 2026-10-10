@@ -11,6 +11,9 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="Cronos" />
+    <!-- Password hashing (PasswordHasher, PBKDF2) and signing our own access tokens. Both Microsoft, MIT. -->
+    <PackageReference Include="Microsoft.Extensions.Identity.Core" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
   </ItemGroup>
 
 </Project>

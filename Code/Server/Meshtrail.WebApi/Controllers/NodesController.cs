@@ -6,6 +6,7 @@ using Meshtrail.Core.Application.UseCases.Mesh.Queries.GetNodeById;
 using Meshtrail.Core.Application.UseCases.Mesh.Queries.GetNodes;
 using Meshtrail.Core.Contracts.Common;
 using Meshtrail.Core.Contracts.Mesh;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Meshtrail.WebApi.Controllers;
@@ -21,10 +22,12 @@ public sealed class NodesController(ISender sender) : ControllerBase
 {
     /// <summary>Nodes in the map view (?bbox=west,south,east,north) and/or matching ?search=, most recently heard first.</summary>
     [HttpGet]
+    [AllowAnonymous]
     public async Task<ActionResult<PagedResult<NodeDto>>> GetList([FromQuery] NodeListRequest request, CancellationToken cancellationToken) =>
         Ok(await sender.Send(new GetNodesQuery(request), cancellationToken));
 
     [HttpGet("{nodeNum}")]
+    [AllowAnonymous]
     public async Task<ActionResult<NodeDetailDto>> GetById(uint nodeNum, CancellationToken cancellationToken) =>
         Ok(await sender.Send(new GetNodeByIdQuery(nodeNum), cancellationToken));
 

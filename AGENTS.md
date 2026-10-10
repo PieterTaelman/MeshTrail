@@ -22,7 +22,7 @@ for new features; it will be renamed or removed once the real domain arrives.
 | Realtime | SignalR hub `/hubs/notifications` (server → client pushes only) |
 | Jobs | `CronJob` base class (`BackgroundService` + Cronos) |
 | Telemetry | Microsoft.Extensions.Logging + OpenTelemetry (OTLP). Production sink: not decided yet |
-| Auth | JWT bearer skeleton + `ICurrentUser`. Identity provider: not decided yet. `Development` mode fakes a user locally |
+| Auth | Own accounts (email + password, confirmed by mail) with our own JWT + `ICurrentUser`. Map is public. Tests use `Development` mode (`X-Dev-User`) |
 | Tests | MSTest.Sdk 4 (Microsoft.Testing.Platform), Shouldly, Moq, `WebApplicationFactory`, Testcontainers |
 | Frontend | Angular 22, TypeScript 6 strict, Signals, Optimus UI, Tailwind 4, Vitest, Playwright — see `Client-Web/AGENTS.md` |
 | Local dev | .NET Aspire 13.6 AppHost (local only; deployment is on-prem), Docker for SQL Server + MailPit |
@@ -35,6 +35,7 @@ for new features; it will be renamed or removed once the real domain arrives.
 | [README.md](README.md) | Getting started, prerequisites, running the AppHost, SSMS |
 | [Documentation/README.md](Documentation/README.md) | Index of living docs |
 | [Documentation/Mesh/README.md](Documentation/Mesh/README.md) | The Meshtastic gateway, simulator and how to connect a real node |
+| [Documentation/Accounts/README.md](Documentation/Accounts/README.md) | User accounts, sign-in, tokens, mail |
 | [Documentation/Samples/README.md](Documentation/Samples/README.md) | The reference module end-to-end (class diagram, DB schema, request flow) |
 | [Documentation/Research/](Documentation/Research/) | Point-in-time decision records (history, not kept in sync) |
 | [Client-Web/AGENTS.md](Client-Web/AGENTS.md) | Angular standards |

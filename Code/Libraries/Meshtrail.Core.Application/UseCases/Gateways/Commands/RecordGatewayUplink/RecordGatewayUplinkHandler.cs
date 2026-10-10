@@ -7,11 +7,13 @@ using Meshtrail.Core.Domain.Mesh;
 namespace Meshtrail.Core.Application.UseCases.Gateways.Commands.RecordGatewayUplink;
 
 /// <summary>
-/// Find the gateway (MQTT: by login; TCP/simulator: by node) → on its first uplink tie it to the node → mark it
-/// online and remember its root and channel → tell the clients → send messages that waited for it.
+/// Find the gateway (MQTT: by login; TCP/simulator: by node) → only its chosen node may use the login → the first
+/// uplink brings it online and registers the node to the owner (proof of ownership) → remember root and channel →
+/// tell the clients → send messages that waited for it.
 /// </summary>
 public sealed class RecordGatewayUplinkHandler(
     IMeshGatewayRepository gateways,
+    INodeRegistrationRepository registrations,
     IMeshNodeRepository nodes,
     IMeshMessageRepository messages,
     IMeshOutbox outbox,
@@ -19,8 +21,6 @@ public sealed class RecordGatewayUplinkHandler(
     TimeProvider timeProvider,
     IPublisher publisher) : ICommandHandler<RecordGatewayUplinkCommand, bool>
 {
-    public const string NodeTakenError = "This node is already a gateway of another user; its uplinks are ignored.";
-
     public async ValueTask<bool> Handle(RecordGatewayUplinkCommand command, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
@@ -31,26 +31,13 @@ public sealed class RecordGatewayUplinkHandler(
         }
 
         var wasSending = gateway.CanSend;
-        var changed = isNew;
-        if (gateway.NodeNum is null)
-        {
-            // First uplink: the node may not already be someone else's gateway.
-            if (!await ReleaseNodeAsync(gateway, command.GatewayNodeNum, now, cancellationToken))
-            {
-                gateway.ReportError(NodeTakenError);
-                await SaveAsync(gateway, isNew, cancellationToken);
-                return false;
-            }
-
-            changed = true;
-        }
-
         var bind = gateway.Bind(command.GatewayNodeNum, now);
         if (bind is GatewayBindResult.OtherNode or GatewayBindResult.Revoked)
         {
             return false;
         }
 
+        var changed = isNew || bind == GatewayBindResult.Bound;
         changed |= gateway.RecordUplink(command.MqttRoot, command.ChannelName, now);
         if (command.ChannelName is { Length: > 0 } channel)
         {
@@ -58,6 +45,10 @@ public sealed class RecordGatewayUplinkHandler(
         }
 
         await SaveAsync(gateway, isNew, cancellationToken);
+        if (bind == GatewayBindResult.Bound && gateway.OwnerUserId is { } owner)
+        {
+            await RegisterNodeAsync(gateway.NodeNum!.Value, owner, gateway.OwnerName ?? owner, now, cancellationToken);
+        }
 
         if (changed)
         {
@@ -104,29 +95,38 @@ public sealed class RecordGatewayUplinkHandler(
     }
 
     /// <summary>
-    /// A node is at most one active gateway. An older gateway on the same node is replaced when it has no owner or the
-    /// same owner (e.g. new credentials for the same node); another user's gateway blocks.
+    /// The owner put the credentials into this node and it uplinked with them: that proves the node is theirs, so it
+    /// is registered to them without a code. An open claim (by anyone) gives way; a verified registration stays.
     /// </summary>
-    private async Task<bool> ReleaseNodeAsync(MeshGateway gateway, uint nodeNum, DateTimeOffset now, CancellationToken cancellationToken)
+    private async Task RegisterNodeAsync(uint nodeNum, string ownerId, string ownerName, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var other = await gateways.GetActiveByNodeNumAsync(nodeNum, cancellationToken);
-        if (other is null || other.Id == gateway.Id)
+        var existing = await registrations.GetActiveForNodeAsync(nodeNum, cancellationToken);
+        if (existing is { Status: RegistrationStatus.Verified })
         {
-            return true;
+            return;
         }
 
-        if (other.OwnerUserId is not null && other.OwnerUserId != gateway.OwnerUserId)
+        if (existing is not null)
         {
-            return false;
+            existing.Revoke("Proven by the owner's gateway login.", now);
+            await registrations.UpdateAsync(existing, cancellationToken);
+
+            // Save the revoke first: the database allows only one active registration per node.
+            await registrations.SaveChangesAsync(cancellationToken);
         }
 
-        other.Revoke(now);
-        await gateways.UpdateAsync(other, cancellationToken);
+        // The gateway check runs before the uplink's packets are processed, so the node may not be known yet.
+        var node = await nodes.GetAsync(nodeNum, cancellationToken);
+        if (node is null)
+        {
+            node = MeshNode.Discover(nodeNum, now);
+            await nodes.AddAsync(node, cancellationToken);
+            await nodes.SaveChangesAsync(cancellationToken);
+        }
 
-        // Save the revoke first: the database allows only one active gateway per node.
-        await gateways.SaveChangesAsync(cancellationToken);
-        await GatewayViews.PublishAsync(other, nodes, gateways, publisher, cancellationToken);
-        return true;
+        await registrations.AddAsync(
+            NodeRegistration.VerifiedByGateway(nodeNum, ownerId, ownerName, node?.LongName, node?.ShortName, node?.PublicKey, now), cancellationToken);
+        await registrations.SaveChangesAsync(cancellationToken);
     }
 
     private async Task SaveAsync(MeshGateway gateway, bool isNew, CancellationToken cancellationToken)

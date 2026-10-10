@@ -95,14 +95,14 @@ internal static class MeshTestHelpers
 
     public static MeshNode KnownNode(uint nodeNum = HikerNodeNum) => MeshNode.Discover(nodeNum, Now.AddDays(-1));
 
-    /// <summary>An MQTT gateway of <see cref="UserName"/>, credentials issued but no uplink yet.</summary>
-    public static MeshGateway PendingGateway(string owner = UserName, string login = GatewayLogin) =>
-        MeshGateway.IssueMqtt(owner, owner, "local", login, GatewayPassword, Now.AddHours(-1));
+    /// <summary>An MQTT gateway of <see cref="UserName"/> on node <paramref name="nodeNum"/>, credentials issued but no uplink yet.</summary>
+    public static MeshGateway PendingGateway(string owner = UserName, string login = GatewayLogin, uint nodeNum = GatewayNodeNum) =>
+        MeshGateway.IssueMqtt(owner, owner, nodeNum, "local", login, GatewayPassword, Now.AddHours(-1));
 
     /// <summary>An MQTT gateway tied to <paramref name="nodeNum"/> (online, or offline when <paramref name="online"/> is false).</summary>
     public static MeshGateway BoundGateway(uint nodeNum = GatewayNodeNum, bool online = true, string login = GatewayLogin)
     {
-        var gateway = PendingGateway(login: login);
+        var gateway = PendingGateway(login: login, nodeNum: nodeNum);
         gateway.Bind(nodeNum, Now.AddHours(-1));
         gateway.RecordUplink("msh/EU_868", "LongFast", Now.AddHours(-1));
         if (!online)
@@ -144,7 +144,7 @@ internal static class MeshTestHelpers
             .ReturnsAsync((string login, CancellationToken _) => known.FirstOrDefault(gateway => gateway.MqttUserName == login));
         gateways.Setup(repo => repo.GetActiveByNodeNumsAsync(It.IsAny<IReadOnlyCollection<uint>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyCollection<uint> nodeNums, CancellationToken _) =>
-                [.. known.Where(gateway => gateway.IsActive && gateway.NodeNum is { } nodeNum && nodeNums.Contains(nodeNum))]);
+                [.. known.Where(gateway => gateway is { IsActive: true, IsPending: false } && gateway.NodeNum is { } nodeNum && nodeNums.Contains(nodeNum))]);
         gateways.Setup(repo => repo.GetBoundAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync([.. known.Where(gateway => gateway.IsActive && gateway.NodeNum is not null)]);
         gateways.Setup(repo => repo.GetActiveMqttOnBrokerAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))

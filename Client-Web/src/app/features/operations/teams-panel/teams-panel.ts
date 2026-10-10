@@ -26,6 +26,8 @@ export class TeamsPanel {
   private readonly api = inject(MeshApi);
 
   readonly teams = input<Team[]>([]);
+  /** False when the panel is a page section (profile) instead of a side panel. */
+  readonly closable = input(true);
   readonly closed = output<void>();
   /** Something changed (created, joined, left, new code): the parent reloads the teams. */
   readonly changed = output<void>();

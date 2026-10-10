@@ -1,4 +1,4 @@
-import { DestroyRef, Injectable, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, effect, inject, signal } from '@angular/core';
 import {
   HubConnection,
   HubConnectionBuilder,
@@ -7,6 +7,7 @@ import {
 } from '@microsoft/signalr';
 import { Observable } from 'rxjs';
 import { API_BASE_URL } from '../api/api-config';
+import { AuthService } from '../auth/auth.service';
 
 export type RealtimeStatus = 'disconnected' | 'connecting' | 'connected';
 
@@ -21,6 +22,7 @@ export type WatchedArea = [number, number, number, number];
 @Injectable({ providedIn: 'root' })
 export class RealtimeService {
   private readonly baseUrl = inject(API_BASE_URL);
+  private readonly auth = inject(AuthService);
   private connection?: HubConnection;
   private area: WatchedArea | null = null;
 
@@ -29,6 +31,17 @@ export class RealtimeService {
 
   constructor() {
     inject(DestroyRef).onDestroy(() => void this.connection?.stop());
+
+    // Signing in or out changes who we are on the hub (private messages are pushed per user): reconnect.
+    let first = true;
+    effect(() => {
+      this.auth.isSignedIn();
+      if (first) {
+        first = false;
+        return;
+      }
+      void this.restart();
+    });
   }
 
   /** Emits the payload every time the server pushes <eventName>. Starts the connection on first use. */
@@ -56,7 +69,11 @@ export class RealtimeService {
     }
 
     this.connection = new HubConnectionBuilder()
-      .withUrl(`${this.baseUrl}/hubs/notifications`, { withCredentials: true })
+      .withUrl(`${this.baseUrl}/hubs/notifications`, {
+        withCredentials: true,
+        // Signed-in users get their private messages; anonymous visitors only the public map updates.
+        accessTokenFactory: () => this.auth.accessToken() ?? '',
+      })
       // Keep retrying: the API may restart during development.
       .withAutomaticReconnect()
       .configureLogging(LogLevel.Warning)
@@ -89,6 +106,15 @@ export class RealtimeService {
       // Realtime is a nice-to-have: the app still works, it just will not auto-refresh.
       this.status.set('disconnected');
     }
+  }
+
+  private async restart(): Promise<void> {
+    const connection = this.connection;
+    if (!connection) {
+      return;
+    }
+    await connection.stop();
+    await this.start(connection);
   }
 
   private async sendArea(connection: HubConnection): Promise<void> {

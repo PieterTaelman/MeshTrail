@@ -88,12 +88,12 @@ flowchart LR
 meshtrail/broker/gateways            { broker, userNames[] }  connected gateway logins (service logins only)
 ```
 
-- **Gateways log in with their own credentials** (from "Add gateway"). The broker asks the API
+- **Gateways log in with their own credentials** (from "Add gateway", tied to the chosen node). The broker asks the API
   (`POST api/v1/mqtt/auth`, header `X-Meshtrail-Service-Key` = the service password) and caches a valid answer for a
   minute (a refused one for 10 s). The broker keeps no credentials itself, so it can run per region later.
 - **Uplinks are stamped** with the gateway's login (MQTT 5 user property `meshtrail-gateway`); a property the
-  gateway set itself is removed first, so nobody can pretend to be another gateway. The API binds the login to the
-  `gateway_id` of its first uplink.
+  gateway set itself is removed first, so nobody can pretend to be another gateway. The login only works for the node
+  chosen when the gateway was added: an uplink with another `gateway_id` is ignored.
 - **Downlinks are targeted**: the API sets `meshtrail-target = <login>` and the broker delivers it to that gateway
   only. Without it every gateway with downlink on that channel would transmit the packet.
 - Routing rule: everything is delivered except gateway → gateway; gateways only receive Meshtastic topics a service
@@ -200,13 +200,17 @@ The contact link flow is unchanged (claim → code by DM → verify), but the no
 (422 otherwise) and the code goes out through the best gateway. After verification every online TCP gateway gets the
 node's key (`add_contact`); MQTT gateways cannot use it for our packets.
 
+A gateway's own node needs no code: its **first uplink** with the owner's login proves the node is theirs and
+registers it to them (an open claim by someone else gives way; a verified registration stays). A node can be
+registered once and be an active gateway once: remove it first to add it again.
+
 ### Gateway status
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Pending: Add gateway (MQTT)
+    [*] --> Pending: Add gateway for a chosen node (MQTT)
     [*] --> Online: TCP / simulator connected
-    Pending --> Online: first uplink (tied to its node)
+    Pending --> Online: first uplink from that node (registers the node to the owner)
     Online --> Offline: broker reports the login gone / TCP lost
     Offline --> Online: connected again / uplink
     Pending --> Revoked: removed
@@ -336,9 +340,9 @@ may read a conversation) and `TeamId` NULL (team chat; no FK, a message outlives
 | Endpoint | Result |
 |---|---|
 | `GET gateways?mine=true` | my gateways (pending included), with login and last error |
-| `GET gateways` | every active, bound gateway (no private fields) |
-| `GET gateways/summary` | `{online, total}` for the chip |
-| `POST gateways` | 201 `GatewayCredentialsDto` (login, password once, MQTT setup) |
+| `GET gateways` | every active, bound gateway (no private fields). Anonymous |
+| `GET gateways/summary` | `{online, total}` for the chip. Anonymous |
+| `POST gateways` `{nodeNum}` | 201 `GatewayCredentialsDto` (login, password once, MQTT setup); node already a gateway, or verified to someone else → 422 |
 | `DELETE gateways/{id}` | 204; someone else's gateway answers 404 |
 | `POST mqtt/auth` | internal (broker), needs `X-Meshtrail-Service-Key`; `{allowed}` |
 | `GET nodes?bbox=w,s,e,n&search&online&registered&owner=me&page&pageSize` | `PagedResult<NodeDto>`, most recently heard first (max 500) |
@@ -355,7 +359,9 @@ may read a conversation) and `TeamId` NULL (team chat; no FK, a message outlives
 | `POST teams/{id}/join-code` | owner: a new join code |
 | `DELETE teams/{id}/members/me` | 204, you left (the last member ends the team) |
 
-In Development/Testing an `X-Dev-User` header signs in as another user (tests act as several people).
+`GET nodes`, `GET nodes/{nodeNum}` and `GET map/features` are anonymous (the map is public); everything else needs a
+signed-in user ([Accounts/README.md](../Accounts/README.md)). In the `Development` authentication mode (integration
+tests) an `X-Dev-User` header signs in as another user.
 
 ### Realtime (SignalR `/hubs/notifications`)
 
@@ -377,18 +383,21 @@ a new `IMapLayerSource` registered in `AddApplication`.
 
 ## Operations map (Angular)
 
-- **Top bar**: `GATEWAYS online/total` chip (green all online, amber some offline, red none; opens My gateways),
-  **My gateways**, **Teams**, **Register node**, counts of nodes in view / online.
+- **Public**: signed out you see the map, the node list and node details; actions and chat need an account.
+- **Top bar**: `GATEWAYS online/total` chip (green all online, amber some offline, red none; opens My gateways on the
+  profile), links to **My gateways**, **My nodes**, **My teams** (or "Sign in"), counts of nodes in view / online.
 - **Left**: layer toggles (nodes, gateways), worldwide search (name or `!id`), "Only my nodes", and the node list:
   nodes **in the map view**, or the search results when searching.
 - **Map**: loads per view (`moveend`), nodes cluster into numbered circles when zoomed out (click to zoom in),
   gateways are rings coloured by status. Live updates come only for the area in view.
-- **Right**: node detail (with **Heard by**, the gateway marked VIA is the one messages go through) or **My
-  gateways**: add a gateway (login + password shown once, with the MQTT settings to enter in the Meshtastic app),
-  see status, last message and channels, remove (two-step).
-- **Teams panel**: your teams (channel, join code to copy, members, whether a gateway carries the channel), create a
-  team, join with a code, renew the code (owner), leave (two-step).
-- **Bottom**: a tab per team (always) and per direct-message conversation. A team tab warns when no online gateway
+- **Right**: node detail (with **Heard by**, the gateway marked VIA is the one messages go through).
+- **Profile → My gateways**: add a gateway by choosing one of your nodes or typing its `!id` (login + password shown
+  once, with the MQTT settings to enter in the Meshtastic app), see status, last message and channels, remove
+  (two-step).
+- **Profile → My nodes**: your registrations (verified, or waiting for the code), register another node, remove.
+- **Profile → My teams**: your teams (channel, join code to copy, members, whether a gateway carries the channel),
+  create a team, join with a code, renew the code (owner), leave (two-step).
+- **Bottom** (signed in): a tab per team (always) and per direct-message conversation. A team tab warns when no online gateway
   carries its channel.
 - `core/map/map-view.ts` is the only code that uses MapLibre. Cluster numbers need a font: the built-in style uses
   MapLibre's demo glyphs; a style without `glyphs` shows the circles without numbers. A web server must serve `.mjs`
@@ -442,12 +451,14 @@ Broker service (`MqttBroker` section):
 ## Connecting a real node as a gateway
 
 1. Start the AppHost. Allow port 1883 in the Windows firewall.
-2. Operations → **My gateways** → **Add gateway**. Copy the login and password (shown once).
+2. Register and sign in, then **Profile → My gateways**: choose the node, or type its id from the Meshtastic app
+   (`!` + 8 characters), and add it. Copy the login and password (shown once); they only work for that node.
 3. In the Meshtastic app → Settings → Module configuration → **MQTT**: enabled, address = your PC's IP on the LAN
    (not `localhost`), the login and password, **encryption off**, JSON off, TLS off, root topic as shown.
    Channels → primary channel: **uplink and downlink on**. (MQTT is independent of the node's TCP API, so Home
    Assistant can stay connected over TCP.)
-4. The gateway turns Online with its first uplink; its node and the nodes it hears appear on the map.
+4. The gateway turns Online with its first uplink, its node is registered to you (My nodes), and the nodes it hears
+   appear on the map.
 5. To look inside the broker use **MQTT Explorer**: host `localhost`, port `1883`, no TLS, username
    `meshtrail-api`, password `dev-only-service-password` (Development). Any other login is treated as a gateway and
    sees nothing.

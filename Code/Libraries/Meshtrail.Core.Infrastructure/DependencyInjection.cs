@@ -1,5 +1,7 @@
 using Meshtrail.Core.Application.Repositories;
 using Meshtrail.Core.Application.Abstractions;
+using Meshtrail.Core.Infrastructure.Accounts;
+using Meshtrail.Core.Infrastructure.Email;
 using Meshtrail.Core.Infrastructure.Jobs;
 using Meshtrail.Core.Infrastructure.Mesh;
 using Meshtrail.Core.Infrastructure.Repositories;
@@ -34,6 +36,27 @@ public static class DependencyInjection
         services.AddScoped<INodeRegistrationRepository, NodeRegistrationRepository>();
         services.AddScoped<IMeshMessageRepository, MeshMessageRepository>();
         services.AddScoped<ITeamRepository, TeamRepository>();
+        services.AddScoped<IUserAccountRepository, UserAccountRepository>();
+
+        // Accounts: our own users, password hashing, access tokens and mail.
+        services.Configure<LocalAuthOptions>(configuration.GetSection(LocalAuthOptions.SectionName));
+        services.AddSingleton<IPasswordHasher, PasswordHasher>();
+        services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
+        services.AddSingleton<ISecureTokenGenerator, SecureTokenGenerator>();
+        services.AddSingleton<IClientLinks, ClientLinks>();
+        services.Configure<EmailOptions>(options =>
+        {
+            configuration.GetSection(EmailOptions.SectionName).Bind(options);
+            if (string.IsNullOrWhiteSpace(options.SmtpHost))
+            {
+                // Locally Aspire injects the MailPit connection string.
+                options.UseConnectionString(configuration.GetConnectionString("mailpit"));
+            }
+        });
+        services.AddSingleton<IEmailSender>(provider =>
+            string.IsNullOrWhiteSpace(provider.GetRequiredService<IOptions<EmailOptions>>().Value.SmtpHost)
+                ? new LogEmailSender(provider.GetRequiredService<ILogger<LogEmailSender>>())
+                : new SmtpEmailSender(provider.GetRequiredService<IOptions<EmailOptions>>(), provider.GetRequiredService<ILogger<SmtpEmailSender>>()));
         services.AddSingleton<ITeamJoinCodeGenerator, TeamJoinCodeGenerator>();
 
         services.AddCronJob<SampleStatisticsJob>(configuration, SampleStatisticsJob.Name);

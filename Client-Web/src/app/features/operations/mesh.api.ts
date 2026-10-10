@@ -40,9 +40,9 @@ export class MeshApi {
     return this.http.get<GatewaySummary>(`${this.url}/gateways/summary`);
   }
 
-  /** New MQTT credentials; the password is only in this answer. */
-  addGateway(): Observable<GatewayCredentials> {
-    return this.http.post<GatewayCredentials>(`${this.url}/gateways`, null);
+  /** Makes the node a gateway: MQTT credentials that only work for that node; the password is only in this answer. */
+  addGateway(nodeNum: number): Observable<GatewayCredentials> {
+    return this.http.post<GatewayCredentials>(`${this.url}/gateways`, { nodeNum });
   }
 
   revokeGateway(id: string): Observable<void> {

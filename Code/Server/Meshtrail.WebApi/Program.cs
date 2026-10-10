@@ -40,6 +40,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddMeshtrailAuthentication(builder.Configuration, builder.Environment);
+builder.Services.AddMeshtrailRateLimits(builder.Configuration);
 
 builder.Services.AddControllers();
 builder.Services
@@ -83,6 +84,7 @@ app.UseHttpsRedirection();
 app.UseCors(CorsPolicy);
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapOpenApi().WithDocumentPerVersion().AllowAnonymous();
 app.MapScalarApiReference().AllowAnonymous();

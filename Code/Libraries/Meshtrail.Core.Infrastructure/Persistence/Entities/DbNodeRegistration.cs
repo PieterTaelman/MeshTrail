@@ -13,7 +13,7 @@ internal sealed class DbNodeRegistration
 
     public string Status { get; set; } = string.Empty;
 
-    public byte[] PublicKey { get; set; } = [];
+    public byte[]? PublicKey { get; set; }
 
     public string LongName { get; set; } = string.Empty;
 

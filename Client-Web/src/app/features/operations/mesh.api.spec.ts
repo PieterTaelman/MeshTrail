@@ -53,11 +53,12 @@ describe('MeshApi', () => {
   });
 
   it('adds a gateway and lists only mine', () => {
-    api.addGateway().subscribe();
+    api.addGateway(4044729068).subscribe();
     api.getGateways(true).subscribe();
 
     const add = http.expectOne('https://api.test/api/v1/gateways');
     expect(add.request.method).toBe('POST');
+    expect(add.request.body).toEqual({ nodeNum: 4044729068 });
     add.flush({});
     const mine = http.expectOne((r) => r.url === 'https://api.test/api/v1/gateways');
     expect(mine.request.params.get('mine')).toBe('true');

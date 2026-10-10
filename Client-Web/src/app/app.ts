@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { ButtonModule } from '@openng/optimus-ui/button';
 import { ThLargeIcon } from '@openng/optimus-ui/icons/thlarge';
+import { AuthService } from './core/auth/auth.service';
 import { RealtimeService } from './core/realtime/realtime.service';
 import { ThemeService } from './core/theme/theme.service';
 
@@ -22,6 +23,7 @@ interface NavItem {
 export class App {
   protected readonly realtimeStatus = inject(RealtimeService).status;
   protected readonly theme = inject(ThemeService);
+  protected readonly auth = inject(AuthService);
 
   protected readonly navigation: NavItem[] = [
     { label: 'Operations', link: '/operations' },

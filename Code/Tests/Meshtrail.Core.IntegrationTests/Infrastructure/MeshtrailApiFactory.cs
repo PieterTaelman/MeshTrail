@@ -1,3 +1,4 @@
+using Meshtrail.Core.Application.Abstractions;
 using Meshtrail.Core.Infrastructure.Mesh;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -18,6 +19,9 @@ internal sealed class MeshtrailApiFactory : WebApplicationFactory<Program>
 
     public FakeGatewayTransport Transport { get; } = new();
 
+    /// <summary>Every mail the API "sent" (confirmation and reset links).</summary>
+    public CapturingEmailSender Mail { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -32,6 +36,15 @@ internal sealed class MeshtrailApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("Meshtastic:Outbound:MinInterval", "00:00:00");
         builder.UseSetting("Jobs:NodePositionRetention:Enabled", "false");
 
-        builder.ConfigureTestServices(services => services.AddSingleton<IGatewayTransport>(Transport));
+        // Real accounts work next to the development user: a request with a Bearer token is checked like in production.
+        builder.UseSetting("Authentication:Local:SigningKey", "integration-tests-signing-key-0123456789abcdef");
+        builder.UseSetting("Authentication:Local:ClientBaseUrl", "https://client.test");
+        builder.UseSetting("RateLimiting:AccountPerMinute", "10000");
+
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddSingleton<IGatewayTransport>(Transport);
+            services.AddSingleton<IEmailSender>(Mail);
+        });
     }
 }

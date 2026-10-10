@@ -3,7 +3,8 @@
 CREATE TABLE [dbo].[MeshGateways]
 (
     [Id]              UNIQUEIDENTIFIER  NOT NULL,
-    -- The gateway's own node number (uint32, so BIGINT). NULL while Pending: the first uplink tells us.
+    -- The gateway's own node number (uint32, so BIGINT), chosen when the gateway is added; its login only works
+    -- for this node.
     [NodeNum]         BIGINT            NULL,
     -- Mqtt | Tcp | Simulated
     [Transport]       NVARCHAR(20)      NOT NULL,
@@ -32,7 +33,7 @@ GO
 CREATE CLUSTERED INDEX [IX_MeshGateways_CreatedAt] ON [dbo].[MeshGateways] ([CreatedAt]);
 GO
 
--- Rule backed by the database: a node is at most one active gateway.
+-- Rule backed by the database: a node is at most one gateway (pending included). Remove it first to add it again.
 CREATE UNIQUE NONCLUSTERED INDEX [UQ_MeshGateways_NodeNum_Active]
     ON [dbo].[MeshGateways] ([NodeNum])
     WHERE [NodeNum] IS NOT NULL AND [Status] <> N'Revoked';

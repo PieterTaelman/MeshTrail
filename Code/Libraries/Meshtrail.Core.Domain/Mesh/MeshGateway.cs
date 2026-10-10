@@ -74,7 +74,10 @@ public sealed class MeshGateway
 
     public Guid Id { get; private set; }
 
-    /// <summary>The gateway's own node number; null while Pending.</summary>
+    /// <summary>
+    /// The gateway's own node number: chosen when the gateway is added (MQTT) or reported by the node (TCP/simulator).
+    /// Null only for gateways created before nodes were chosen up front.
+    /// </summary>
     public uint? NodeNum { get; private set; }
 
     public GatewayTransport Transport { get; private set; }
@@ -117,8 +120,15 @@ public sealed class MeshGateway
     /// <summary>Rule: we only route through a gateway that is connected and known (bound to a node).</summary>
     public bool CanSend => Status == GatewayStatus.Online && NodeNum is not null;
 
-    /// <summary>A new gateway for <paramref name="ownerUserId"/>; the password is handed out once and only its hash is kept.</summary>
-    public static MeshGateway IssueMqtt(string ownerUserId, string ownerName, string broker, string userName, string password, DateTimeOffset now)
+    /// <summary>Credentials issued but the node never uplinked with them yet.</summary>
+    public bool IsPending => Status == GatewayStatus.Pending;
+
+    /// <summary>
+    /// A new gateway on node <paramref name="nodeNum"/> for <paramref name="ownerUserId"/>. The login only works for that
+    /// node; the password is handed out once and only its hash is kept. Pending until the node's first uplink.
+    /// </summary>
+    public static MeshGateway IssueMqtt(
+        string ownerUserId, string ownerName, uint nodeNum, string broker, string userName, string password, DateTimeOffset now)
     {
         if (string.IsNullOrWhiteSpace(userName) || userName.Length > MqttUserNameMaxLength)
         {
@@ -133,6 +143,7 @@ public sealed class MeshGateway
         return new MeshGateway
         {
             Id = Guid.CreateVersion7(now),
+            NodeNum = nodeNum,
             Transport = GatewayTransport.Mqtt,
             OwnerUserId = Cut(ownerUserId, OwnerMaxLength),
             OwnerName = Cut(ownerName, OwnerMaxLength),
@@ -235,7 +246,10 @@ public sealed class MeshGateway
         && password is not null
         && CryptographicOperations.FixedTimeEquals(HashPassword(MqttUserName, password), CredentialHash);
 
-    /// <summary>Ties the gateway to the node that sent the uplink. A login can never move to another node.</summary>
+    /// <summary>
+    /// An uplink arrived with this gateway's login from <paramref name="nodeNum"/>. Only the chosen node may use the
+    /// login; its first uplink brings a pending gateway online (proof that the owner controls the node).
+    /// </summary>
     public GatewayBindResult Bind(uint nodeNum, DateTimeOffset now)
     {
         if (!IsActive)
@@ -243,9 +257,14 @@ public sealed class MeshGateway
             return GatewayBindResult.Revoked;
         }
 
-        if (NodeNum is { } bound)
+        if (NodeNum is { } chosen && chosen != nodeNum)
         {
-            return bound == nodeNum ? GatewayBindResult.AlreadyBound : GatewayBindResult.OtherNode;
+            return GatewayBindResult.OtherNode;
+        }
+
+        if (!IsPending && NodeNum is not null)
+        {
+            return GatewayBindResult.AlreadyBound;
         }
 
         NodeNum = nodeNum;
@@ -260,7 +279,7 @@ public sealed class MeshGateway
     /// </summary>
     public bool RecordUplink(string? mqttRoot, string? channel, DateTimeOffset now)
     {
-        if (!IsActive || NodeNum is null)
+        if (!IsActive || IsPending || NodeNum is null)
         {
             return false;
         }
@@ -293,8 +312,8 @@ public sealed class MeshGateway
     /// <summary>The broker (MQTT) or the connection (TCP/simulator) says whether the gateway is connected. Returns true when the status changed.</summary>
     public bool ChangeConnection(bool connected, string? error, DateTimeOffset now)
     {
-        // A pending gateway becomes online only through its first uplink (that is when we learn which node it is).
-        if (!IsActive || NodeNum is null)
+        // A pending gateway becomes online only through its first uplink (the proof that it is the chosen node).
+        if (!IsActive || IsPending || NodeNum is null)
         {
             return false;
         }

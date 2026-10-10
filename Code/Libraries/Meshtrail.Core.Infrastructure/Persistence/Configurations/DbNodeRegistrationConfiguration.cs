@@ -17,7 +17,7 @@ internal sealed class DbNodeRegistrationConfiguration : IEntityTypeConfiguration
         builder.Property(registration => registration.UserId).HasMaxLength(NodeRegistration.UserMaxLength).IsRequired();
         builder.Property(registration => registration.UserName).HasMaxLength(NodeRegistration.UserMaxLength).IsRequired();
         builder.Property(registration => registration.Status).HasMaxLength(20).IsRequired();
-        builder.Property(registration => registration.PublicKey).HasMaxLength(MeshNode.PublicKeyLength).IsRequired();
+        builder.Property(registration => registration.PublicKey).HasMaxLength(MeshNode.PublicKeyLength);
         builder.Property(registration => registration.LongName).HasMaxLength(MeshNode.LongNameMaxLength).IsRequired();
         builder.Property(registration => registration.ShortName).HasMaxLength(MeshNode.ShortNameMaxLength).IsRequired();
         builder.Property(registration => registration.CodeHash).HasMaxLength(32);

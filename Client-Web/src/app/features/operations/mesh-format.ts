@@ -124,6 +124,23 @@ export function tabOf(message: MeshMessage): ChatTab | null {
     : { kind: 'dm', nodeNum: message.peerNodeNum };
 }
 
+/**
+ * Reads a node id as people type it: "!f115aaec" (as the Meshtastic app shows it), "f115aaec", or the decimal number.
+ * Returns null for anything else.
+ */
+export function parseNodeId(text: string): number | null {
+  const value = text.trim().toLowerCase();
+  const hex = /^!?([0-9a-f]{8})$/.exec(value);
+  if (hex) {
+    return parseInt(hex[1], 16);
+  }
+  if (/^[0-9]{1,10}$/.test(value)) {
+    const number = Number(value);
+    return number > 0 && number < 0xffffffff ? number : null;
+  }
+  return null;
+}
+
 /** "!" + 8 hex digits, as people write node numbers. */
 export function formatNodeId(nodeNum: number): string {
   return `!${nodeNum.toString(16).padStart(8, '0')}`;

@@ -10,16 +10,18 @@
         team's nodes and on a gateway. Only members can read the team chat.
       </p>
     </div>
-    <p-button
-      [text]="true"
-      [rounded]="true"
-      severity="secondary"
-      size="small"
-      ariaLabel="Close teams"
-      (onClick)="closed.emit()"
-    >
-      <ng-template #icon><svg data-p-icon="times" aria-hidden="true"></svg></ng-template>
-    </p-button>
+    @if (closable()) {
+      <p-button
+        [text]="true"
+        [rounded]="true"
+        severity="secondary"
+        size="small"
+        ariaLabel="Close teams"
+        (onClick)="closed.emit()"
+      >
+        <ng-template #icon><svg data-p-icon="times" aria-hidden="true"></svg></ng-template>
+      </p-button>
+    }
   </header>
 
   @if (error(); as message) {

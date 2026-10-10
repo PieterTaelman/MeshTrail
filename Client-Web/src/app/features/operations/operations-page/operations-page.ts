@@ -3,10 +3,14 @@ import {
   Component,
   DestroyRef,
   computed,
+  effect,
   inject,
+  input,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
 import { rxResource, takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonModule } from '@openng/optimus-ui/button';
 import { IconFieldModule } from '@openng/optimus-ui/iconfield';
@@ -16,10 +20,10 @@ import { InputTextModule } from '@openng/optimus-ui/inputtext';
 import { MessageModule } from '@openng/optimus-ui/message';
 import { debounceTime, distinctUntilChanged, map, of } from 'rxjs';
 import { MapBounds, MapFeatures, MapView } from '../../../core/map/map-view';
+import { AuthService } from '../../../core/auth/auth.service';
 import { RealtimeService } from '../../../core/realtime/realtime.service';
 import { ChatDrawer } from '../chat-drawer/chat-drawer';
 import { GatewayChip } from '../gateway-chip';
-import { GatewaysPanel } from '../gateways-panel/gateways-panel';
 import { MeshApi } from '../mesh.api';
 import {
   formatAge,
@@ -41,7 +45,6 @@ import {
 } from '../mesh.models';
 import { NodeDetail } from '../node-detail/node-detail';
 import { RegistrationDialog } from '../registration-dialog/registration-dialog';
-import { TeamsPanel } from '../teams-panel/teams-panel';
 
 /** Nodes listed at once (in view or found by search). Zoom in or search to see others. */
 const NODE_PAGE_SIZE = 200;
@@ -54,9 +57,10 @@ const NO_NODES: PagedResult<MeshNode> = {
 };
 
 /**
- * The operations map, for nodes anywhere in the world. The map and the node list load what is in view (or what a
- * search finds, anywhere); the server pushes changes for the area in view only. Gateways show as rings coloured by
- * status, and the GATEWAYS chip opens "My gateways". Nothing polls.
+ * The operations map, for nodes anywhere in the world. Public: anyone can look; signing in adds actions and chat.
+ * The map and the node list load what is in view (or what a search finds, anywhere); the server pushes changes for the
+ * area in view only. Gateways show as rings coloured by status; gateways, nodes and teams are managed on the profile.
+ * Nothing polls.
  */
 @Component({
   selector: 'app-operations-page',
@@ -70,11 +74,10 @@ const NO_NODES: PagedResult<MeshNode> = {
     SearchIcon,
     ChatDrawer,
     GatewayChip,
-    GatewaysPanel,
     MapView,
     NodeDetail,
     RegistrationDialog,
-    TeamsPanel,
+    RouterLink,
   ],
   templateUrl: './operations-page.html',
   host: { class: 'block h-full' },
@@ -82,8 +85,14 @@ const NO_NODES: PagedResult<MeshNode> = {
 export class OperationsPage {
   private readonly api = inject(MeshApi);
   private readonly realtime = inject(RealtimeService);
+  private readonly router = inject(Router);
   private readonly map = viewChild(MapView);
   private readonly chat = viewChild(ChatDrawer);
+  protected readonly auth = inject(AuthService);
+
+  /** From the URL (links from the profile): ?node=… opens that node, ?team=… opens that team's chat. */
+  readonly node = input<string>('');
+  readonly team = input<string>('');
 
   /** Ticks every 30 s so "last heard" texts and marker colours age without reloading. */
   protected readonly now = signal(Date.now());
@@ -95,8 +104,6 @@ export class OperationsPage {
   protected readonly showNodes = signal(true);
   protected readonly showGateways = signal(true);
   protected readonly selectedNodeNum = signal<number | null>(null);
-  /** What the right-hand panel shows when no node is selected. */
-  protected readonly sidePanel = signal<'gateways' | 'teams' | null>(null);
   protected readonly registrationOpen = signal(false);
 
   /** The search, once the user stops typing. */
@@ -136,7 +143,10 @@ export class OperationsPage {
   });
 
   protected readonly gatewaySummary = rxResource({ stream: () => this.api.getGatewaySummary() });
-  protected readonly teams = rxResource({ stream: () => this.api.getTeams() });
+  protected readonly teams = rxResource({
+    params: () => (this.auth.isSignedIn() ? true : undefined),
+    stream: () => this.api.getTeams(),
+  });
   protected readonly myTeams = computed(() => this.teams.value() ?? []);
 
   protected readonly listedNodes = computed(() => this.nodes.value()?.items ?? []);
@@ -209,6 +219,21 @@ export class OperationsPage {
       .pipe(debounceTime(1500), takeUntilDestroyed())
       .subscribe(() => this.features.reload());
 
+    // Links from the profile: open the node or the team chat once.
+    effect(() => {
+      const nodeNum = Number(this.node());
+      if (nodeNum > 0) {
+        untracked(() => this.showNodeDetail(nodeNum));
+      }
+    });
+    effect(() => {
+      const teamId = this.team();
+      const chat = this.chat();
+      if (teamId && chat && this.myTeams().some((item) => item.id === teamId)) {
+        untracked(() => chat.openTeam(teamId));
+      }
+    });
+
     this.realtime
       .on<Gateway>(MESH_EVENTS.gatewayStatusChanged)
       .pipe(debounceTime(1000), takeUntilDestroyed())
@@ -233,17 +258,16 @@ export class OperationsPage {
   }
 
   protected showNodeDetail(nodeNum: number): void {
-    this.sidePanel.set(null);
     this.selectedNodeNum.set(nodeNum);
   }
 
-  protected openPanel(panel: 'gateways' | 'teams'): void {
-    this.selectedNodeNum.set(null);
-    this.sidePanel.set(panel);
-  }
-
-  protected openTeamChat(teamId: string): void {
-    this.chat()?.openTeam(teamId);
+  /** The GATEWAYS chip: your gateways when signed in, otherwise sign in first. */
+  protected openGateways(): void {
+    void this.router.navigate(this.auth.isSignedIn() ? ['/profile'] : ['/account/sign-in'], {
+      queryParams: this.auth.isSignedIn()
+        ? { tab: 'gateways' }
+        : { returnUrl: '/profile?tab=gateways' },
+    });
   }
 
   protected onFeatureClick(featureId: string): void {

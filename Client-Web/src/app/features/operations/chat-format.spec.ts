@@ -1,6 +1,7 @@
 import {
   chatTabKey,
   formatNodeId,
+  parseNodeId,
   statusMark,
   tabOf,
   upsertMessage,
@@ -35,6 +36,14 @@ describe('chat helpers', () => {
     expect(team && chatTabKey(team)).toBe('team:t1');
     expect(dm && chatTabKey(dm)).toBe('dm:42');
     expect(tabOf(message({ channelIndex: 0 }))).toBeNull();
+  });
+
+  it('reads node ids the way people type them', () => {
+    expect(parseNodeId('!f115aaec')).toBe(4044729068);
+    expect(parseNodeId('F115AAEC')).toBe(4044729068);
+    expect(parseNodeId('4044729068')).toBe(4044729068);
+    expect(parseNodeId('!f115')).toBeNull();
+    expect(parseNodeId('4294967295')).toBeNull();
   });
 
   it('writes node numbers as people do', () => {

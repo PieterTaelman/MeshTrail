@@ -12,7 +12,9 @@ namespace Meshtrail.WebApi.Controllers;
 [Route("api/v{version:apiVersion}/map")]
 public sealed class MapController(ISender sender) : ControllerBase
 {
+    /// <summary>Public: the map can be viewed without an account.</summary>
     [HttpGet("features")]
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
     public async Task<ActionResult<MapFeatureCollectionDto>> GetFeatures([FromQuery] MapFeaturesRequest request, CancellationToken cancellationToken) =>
         Ok(await sender.Send(new GetMapFeaturesQuery(request), cancellationToken));
 }

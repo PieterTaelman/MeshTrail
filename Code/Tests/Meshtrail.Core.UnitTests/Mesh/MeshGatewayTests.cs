@@ -10,14 +10,14 @@ namespace Meshtrail.Core.UnitTests.Mesh;
 public sealed class MeshGatewayTests
 {
     [TestMethod]
-    public void IssueMqtt_NewGateway_IsPendingAndKeepsOnlyAHash()
+    public void IssueMqtt_NewGateway_IsPendingOnTheChosenNodeAndKeepsOnlyAHash()
     {
         // Act
         var gateway = PendingGateway();
 
         // Assert
         gateway.Status.ShouldBe(GatewayStatus.Pending);
-        gateway.NodeNum.ShouldBeNull();
+        gateway.NodeNum.ShouldBe(GatewayNodeNum);
         gateway.CanSend.ShouldBeFalse();
         gateway.CredentialHash.ShouldNotBeNull().Length.ShouldBe(MeshGateway.CredentialHashLength);
     }
@@ -71,6 +71,20 @@ public sealed class MeshGatewayTests
         // Assert
         result.ShouldBe(GatewayBindResult.OtherNode);
         gateway.NodeNum.ShouldBe(GatewayNodeNum);
+    }
+
+    [TestMethod]
+    public void Bind_PendingLoginUsedByAnotherNode_IsRefusedAndStaysPending()
+    {
+        // Arrange
+        var gateway = PendingGateway();
+
+        // Act
+        var result = gateway.Bind(OtherGatewayNodeNum, Now);
+
+        // Assert
+        result.ShouldBe(GatewayBindResult.OtherNode);
+        gateway.Status.ShouldBe(GatewayStatus.Pending);
     }
 
     [TestMethod]

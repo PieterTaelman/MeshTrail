@@ -11,6 +11,7 @@ internal sealed class MeshGatewayRepository(MeshtrailDbContext dbContext) : IMes
 {
     private const string Revoked = nameof(GatewayStatus.Revoked);
     private const string Online = nameof(GatewayStatus.Online);
+    private const string Pending = nameof(GatewayStatus.Pending);
     private const string Mqtt = nameof(GatewayTransport.Mqtt);
 
     // Pairs each gateway handed out in this scope with its EF row, so updates change the right row.
@@ -38,7 +39,7 @@ internal sealed class MeshGatewayRepository(MeshtrailDbContext dbContext) : IMes
 
         var wanted = nodeNums.Select(nodeNum => (long)nodeNum).ToList();
         var rows = await Gateways.AsNoTracking()
-            .Where(row => row.NodeNum != null && wanted.Contains(row.NodeNum.Value) && row.Status != Revoked)
+            .Where(row => row.NodeNum != null && wanted.Contains(row.NodeNum.Value) && row.Status != Revoked && row.Status != Pending)
             .ToListAsync(cancellationToken);
         return [.. rows.Select(row => row.ToDomain())];
     }
@@ -72,14 +73,14 @@ internal sealed class MeshGatewayRepository(MeshtrailDbContext dbContext) : IMes
     public async Task<IReadOnlyList<MeshGateway>> GetBoundAsync(CancellationToken cancellationToken)
     {
         var rows = await Gateways.AsNoTracking()
-            .Where(row => row.NodeNum != null && row.Status != Revoked)
+            .Where(row => row.NodeNum != null && row.Status != Revoked && row.Status != Pending)
             .ToListAsync(cancellationToken);
         return [.. rows.Select(row => row.ToDomain())];
     }
 
     public async Task<(int Online, int Total)> CountAsync(CancellationToken cancellationToken)
     {
-        var bound = Gateways.AsNoTracking().Where(row => row.NodeNum != null && row.Status != Revoked);
+        var bound = Gateways.AsNoTracking().Where(row => row.NodeNum != null && row.Status != Revoked && row.Status != Pending);
         var online = await bound.CountAsync(row => row.Status == Online, cancellationToken);
         var total = await bound.CountAsync(cancellationToken);
         return (online, total);

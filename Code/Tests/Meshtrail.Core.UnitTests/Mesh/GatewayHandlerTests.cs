@@ -28,9 +28,10 @@ public sealed class GatewayHandlerTests
             .Callback((MeshGateway gateway, CancellationToken _) => stored = gateway);
 
         // Act
-        var result = await AddHandler(gateways).Handle(new AddGatewayCommand(), CancellationToken.None);
+        var result = await AddHandler(gateways).Handle(new AddGatewayCommand(GatewayNodeNum), CancellationToken.None);
 
         // Assert
+        result.Gateway.NodeNum.ShouldBe(GatewayNodeNum);
         result.UserName.ShouldBe(GatewayLogin);
         result.Password.ShouldBe(GatewayPassword);
         result.Gateway.Status.ShouldBe("Pending");
@@ -48,8 +49,33 @@ public sealed class GatewayHandlerTests
         gateways.Setup(repo => repo.CountActiveForOwnerAsync(UserName, It.IsAny<CancellationToken>())).ReturnsAsync(MeshGateway.MaxPerOwner);
 
         // Act + Assert
-        await Should.ThrowAsync<DomainException>(async () => await AddHandler(gateways).Handle(new AddGatewayCommand(), CancellationToken.None));
+        await Should.ThrowAsync<DomainException>(async () => await AddHandler(gateways).Handle(new AddGatewayCommand(GatewayNodeNum), CancellationToken.None));
         gateways.Verify(repo => repo.AddAsync(It.IsAny<MeshGateway>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [TestMethod]
+    public async Task AddGateway_NodeAlreadyMyGateway_ThrowsRemoveItFirst()
+    {
+        // Arrange
+        var gateways = GatewaysWith(PendingGateway());
+
+        // Act + Assert
+        var exception = await Should.ThrowAsync<DomainException>(async () =>
+            await AddHandler(gateways).Handle(new AddGatewayCommand(GatewayNodeNum), CancellationToken.None));
+        exception.Message.ShouldContain("Remove it first");
+    }
+
+    [TestMethod]
+    public async Task AddGateway_NodeRegisteredToSomeoneElse_Throws()
+    {
+        // Arrange
+        var registration = ClaimedRegistration(userId: "someone-else");
+        registration.Verify("123456", Now);
+
+        // Act + Assert
+        var exception = await Should.ThrowAsync<DomainException>(async () =>
+            await AddHandler(GatewaysWith(), Registrations(registration)).Handle(new AddGatewayCommand(HikerNodeNum), CancellationToken.None));
+        exception.Message.ShouldContain("registered to another user");
     }
 
     [TestMethod]
@@ -139,21 +165,33 @@ public sealed class GatewayHandlerTests
     }
 
     [TestMethod]
-    public async Task Uplink_NodeIsAlreadyAnotherUsersGateway_IsRejectedWithError()
+    public async Task Uplink_PendingLoginFromAnotherNode_IsRejected()
     {
         // Arrange
-        var theirs = PendingGateway(owner: "someone-else", login: "gw-theirs0001");
-        theirs.Bind(GatewayNodeNum, Now.AddHours(-1));
-        var mine = PendingGateway();
-        var handler = UplinkHandler(GatewaysWith(theirs, mine));
+        var gateway = PendingGateway();
 
         // Act
-        var accepted = await handler.Handle(Uplink(GatewayLogin, GatewayNodeNum), CancellationToken.None);
+        var accepted = await UplinkHandler(GatewaysWith(gateway)).Handle(Uplink(GatewayLogin, OtherGatewayNodeNum), CancellationToken.None);
 
         // Assert
         accepted.ShouldBeFalse();
-        mine.NodeNum.ShouldBeNull();
-        mine.LastError.ShouldBe(RecordGatewayUplinkHandler.NodeTakenError);
+        gateway.Status.ShouldBe(GatewayStatus.Pending);
+    }
+
+    [TestMethod]
+    public async Task Uplink_FirstFromTheChosenNode_RegistersTheNodeToTheOwner()
+    {
+        // Arrange
+        var registrations = Registrations();
+
+        // Act
+        await UplinkHandler(GatewaysWith(PendingGateway()), registrations: registrations).Handle(Uplink(GatewayLogin, GatewayNodeNum), CancellationToken.None);
+
+        // Assert
+        registrations.Verify(repo => repo.AddAsync(
+            It.Is<NodeRegistration>(registration =>
+                registration.NodeNum == GatewayNodeNum && registration.UserId == UserName && registration.Status == RegistrationStatus.Verified),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [TestMethod]
@@ -208,20 +246,30 @@ public sealed class GatewayHandlerTests
     private static RecordGatewayUplinkCommand Uplink(string login, uint gatewayNodeNum) =>
         new(GatewayTransport.Mqtt, gatewayNodeNum, login, "local", "msh/EU_868", "LongFast", Now);
 
-    private static AddGatewayHandler AddHandler(Mock<IMeshGatewayRepository> gateways)
+    private static AddGatewayHandler AddHandler(Mock<IMeshGatewayRepository> gateways, Mock<INodeRegistrationRepository>? registrations = null)
     {
         var credentials = new Mock<IGatewayCredentialGenerator>();
         credentials.Setup(generator => generator.NewCredentials()).Returns(new GatewayCredentials(GatewayLogin, GatewayPassword));
-        return new AddGatewayHandler(gateways.Object, credentials.Object, Setup(false).Object, CurrentUser().Object, FixedTime(), Publisher().Object);
+        return new AddGatewayHandler(
+            gateways.Object,
+            (registrations ?? Registrations()).Object,
+            NodesReturning(null).Object,
+            credentials.Object,
+            Setup(false).Object,
+            CurrentUser().Object,
+            FixedTime(),
+            Publisher().Object);
     }
 
     private static RecordGatewayUplinkHandler UplinkHandler(
         Mock<IMeshGatewayRepository> gateways,
         bool acceptUnregistered = false,
         Mock<IMeshMessageRepository>? messages = null,
-        Mock<IMeshOutbox>? outbox = null) =>
+        Mock<IMeshOutbox>? outbox = null,
+        Mock<INodeRegistrationRepository>? registrations = null) =>
         new(
             gateways.Object,
+            (registrations ?? Registrations()).Object,
             NodesReturning(null).Object,
             (messages ?? MessagesReturning(null)).Object,
             (outbox ?? Outbox()).Object,

@@ -83,32 +83,39 @@
       <dd class="font-mono">{{ formatAge(node.firstSeenAt, now()) }}</dd>
     </dl>
 
-    <div class="flex flex-wrap gap-2">
-      <p-button label="Message" size="small" (onClick)="messageNode.emit(node.nodeNum)" />
-      <p-button
-        label="Request position"
-        size="small"
-        severity="secondary"
-        [disabled]="busy()"
-        (onClick)="requestPosition()"
-      />
-      <p-button
-        label="Traceroute"
-        size="small"
-        severity="secondary"
-        [disabled]="busy()"
-        (onClick)="requestTraceroute()"
-      />
-      @if (!node.isRegistered) {
+    @if (!signedIn()) {
+      <p class="text-xs text-muted-color">
+        <a routerLink="/account/sign-in" class="text-primary">Sign in</a> to message this node, ask
+        for its position or register it.
+      </p>
+    } @else {
+      <div class="flex flex-wrap gap-2">
+        <p-button label="Message" size="small" (onClick)="messageNode.emit(node.nodeNum)" />
         <p-button
-          label="Register"
+          label="Request position"
           size="small"
           severity="secondary"
-          [outlined]="true"
-          (onClick)="registerNode.emit()"
+          [disabled]="busy()"
+          (onClick)="requestPosition()"
         />
-      }
-    </div>
+        <p-button
+          label="Traceroute"
+          size="small"
+          severity="secondary"
+          [disabled]="busy()"
+          (onClick)="requestTraceroute()"
+        />
+        @if (!node.isRegistered) {
+          <p-button
+            label="Register"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="registerNode.emit()"
+          />
+        }
+      </div>
+    }
     @if (node.isRegistered) {
       <p class="font-mono text-xs text-primary">REGISTERED</p>
     }

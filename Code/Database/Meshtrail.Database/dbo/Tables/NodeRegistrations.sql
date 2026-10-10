@@ -7,8 +7,9 @@ CREATE TABLE [dbo].[NodeRegistrations]
     [UserName]            NVARCHAR(256)     NOT NULL,
     -- Claimed | Verified | Revoked
     [Status]              NVARCHAR(20)      NOT NULL,
-    -- Public key from the contact link (32 bytes); given to the gateway once the registration is verified.
-    [PublicKey]           VARBINARY(32)     NOT NULL,
+    -- Public key from the contact link (32 bytes); given to TCP gateways once verified. NULL for a node registered
+    -- through its gateway login before we heard its key.
+    [PublicKey]           VARBINARY(32)     NULL,
     [LongName]            NVARCHAR(40)      NOT NULL,
     [ShortName]           NVARCHAR(10)      NOT NULL,
     -- SHA-256 of the 6-digit code (never the code itself).

@@ -1,5 +1,13 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject, input, output, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 import { rxResource, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonModule } from '@openng/optimus-ui/button';
 import { TimesIcon } from '@openng/optimus-ui/icons/times';
@@ -8,12 +16,13 @@ import { debounceTime } from 'rxjs';
 import { describeHttpError } from '../../../core/api/problem-details';
 import { RealtimeService } from '../../../core/realtime/realtime.service';
 import { MeshApi } from '../mesh.api';
-import { formatAge, gatewayColor } from '../mesh-format';
+import { formatAge, formatNodeId, gatewayColor, parseNodeId } from '../mesh-format';
 import { Gateway, GatewayCredentials, MESH_EVENTS } from '../mesh.models';
 
 /**
- * "My gateways": the user's gateways with their status, a button to add one (shows the MQTT settings for the node
- * once, with the password) and a two-step remove. Updates live when a gateway comes online or goes offline.
+ * "My gateways": the user's gateways with their status, a form to make one of your nodes a gateway (shows the MQTT
+ * settings once, with the password; the login only works for that node) and a two-step remove. A node can be a
+ * gateway only once: remove it first to add it again. Updates live when a gateway comes online or goes offline.
  */
 @Component({
   selector: 'app-gateways-panel',
@@ -27,11 +36,35 @@ export class GatewaysPanel {
 
   /** Current time in ms, ticking in the parent, so ages stay fresh. */
   readonly now = input.required<number>();
+  /** False when the panel is a page section (profile) instead of a side panel. */
+  readonly closable = input(true);
   readonly closed = output<void>();
   /** The user clicked a gateway: show its node. */
   readonly showNode = output<number>();
 
   protected readonly gateways = rxResource({ stream: () => this.api.getGateways(true) });
+  private readonly registrations = rxResource({ stream: () => this.api.getMyRegistrations() });
+
+  /** My verified nodes that are not a gateway yet: the choices in the picker. */
+  protected readonly candidates = computed(() => {
+    const gatewayNodes = new Set((this.gateways.value() ?? []).map((gateway) => gateway.nodeNum));
+    return (this.registrations.value() ?? []).filter(
+      (registration) =>
+        registration.status === 'Verified' && !gatewayNodes.has(registration.nodeNum),
+    );
+  });
+
+  /** The chosen node: a node number from the list, or "other" to type an id. */
+  protected readonly choice = signal<string>('');
+  protected readonly typedId = signal('');
+  protected readonly chosenNodeNum = computed(() => {
+    const choice = this.choice() || String(this.candidates()[0]?.nodeNum ?? 'other');
+    return choice === 'other' ? parseNodeId(this.typedId()) : Number(choice);
+  });
+  protected readonly showTypedId = computed(
+    () => (this.choice() || (this.candidates().length ? '' : 'other')) === 'other',
+  );
+  protected readonly formatNodeId = formatNodeId;
   protected readonly credentials = signal<GatewayCredentials | null>(null);
   protected readonly confirmingId = signal<string | null>(null);
   protected readonly busy = signal(false);
@@ -52,12 +85,21 @@ export class GatewaysPanel {
   }
 
   protected add(): void {
+    const nodeNum = this.chosenNodeNum();
+    if (nodeNum === null) {
+      this.error.set(
+        'Choose one of your nodes, or type its id as the Meshtastic app shows it (e.g. !f115aaec).',
+      );
+      return;
+    }
     this.busy.set(true);
     this.error.set(null);
-    this.api.addGateway().subscribe({
+    this.api.addGateway(nodeNum).subscribe({
       next: (credentials) => {
         this.busy.set(false);
         this.credentials.set(credentials);
+        this.typedId.set('');
+        this.choice.set('');
         this.gateways.reload();
       },
       error: (error: unknown) => {

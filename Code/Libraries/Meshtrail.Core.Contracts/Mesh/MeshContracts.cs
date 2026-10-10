@@ -32,6 +32,9 @@ public sealed record GatewaySummaryDto(int Online, int Total);
 /// </summary>
 public sealed record MqttSetupDto(string? ServerAddress, int Port, bool UseTls, string Root);
 
+/// <summary>Body of POST gateways: the node that becomes the gateway (one of your nodes, or its !id converted to a number).</summary>
+public sealed record AddGatewayRequest(uint NodeNum);
+
 /// <summary>Answer of POST gateways: the password is shown this one time only (we keep only a hash).</summary>
 public sealed record GatewayCredentialsDto(GatewayDto Gateway, string UserName, string Password, MqttSetupDto Setup);
 

@@ -74,11 +74,12 @@ internal static class MeshApiTestHelpers
     {
         var owner = $"owner-{UniqueName()}";
         using var client = ClientAs(owner);
-        var response = await client.PostAsync(GatewaysUrl, null);
+        var nodeNum = UniqueNodeNum();
+        var response = await client.PostAsJsonAsync(GatewaysUrl, new AddGatewayRequest(nodeNum));
         response.EnsureSuccessStatusCode();
         var credentials = (await response.Content.ReadFromJsonAsync<GatewayCredentialsDto>())!;
 
-        var gateway = new TestGateway(UniqueNodeNum(), credentials.UserName, owner);
+        var gateway = new TestGateway(nodeNum, credentials.UserName, owner);
         Transport.Inject(gateway.NodeNum, gateway.Login, Packet(gateway.NodeNum, PortNum.NodeinfoApp, UserInfo($"GW {UniqueName()}"), hops: 0));
         Transport.Inject(gateway.NodeNum, gateway.Login, Packet(gateway.NodeNum, PortNum.PositionApp, PositionAt(latitude, longitude), hops: 0));
         await EventuallyAsync(

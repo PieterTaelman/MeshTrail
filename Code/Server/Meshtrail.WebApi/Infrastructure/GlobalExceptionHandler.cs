@@ -1,5 +1,6 @@
 using FluentValidation;
 using Meshtrail.Core.Application.Common;
+using SignInResult = Meshtrail.Core.Domain.Accounts.SignInResult;
 using Meshtrail.Core.Domain.Common;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
@@ -29,6 +30,17 @@ internal sealed partial class GlobalExceptionHandler(
             {
                 Status = StatusCodes.Status409Conflict,
                 Title = "Changed by someone else",
+                Detail = exception.Message,
+            },
+            SignInFailedException signIn => new ProblemDetails
+            {
+                Status = signIn.Reason switch
+                {
+                    SignInResult.NotConfirmed => StatusCodes.Status403Forbidden,
+                    SignInResult.Locked => StatusCodes.Status429TooManyRequests,
+                    _ => StatusCodes.Status401Unauthorized,
+                },
+                Title = "Sign-in failed",
                 Detail = exception.Message,
             },
             DomainException => new ProblemDetails

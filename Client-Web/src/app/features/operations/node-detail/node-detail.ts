@@ -9,6 +9,7 @@ import {
   signal,
 } from '@angular/core';
 import { rxResource, takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { RouterLink } from '@angular/router';
 import { ButtonModule } from '@openng/optimus-ui/button';
 import { TimesIcon } from '@openng/optimus-ui/icons/times';
 import { MessageModule } from '@openng/optimus-ui/message';
@@ -26,7 +27,7 @@ import { MESH_EVENTS, MeshNode, NodeTraceroute } from '../mesh.models';
 @Component({
   selector: 'app-node-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DecimalPipe, ButtonModule, MessageModule, TimesIcon],
+  imports: [DecimalPipe, RouterLink, ButtonModule, MessageModule, TimesIcon],
   templateUrl: './node-detail.html',
   host: { class: 'block' },
 })
@@ -43,6 +44,8 @@ export class NodeDetail {
   readonly registerNode = output<void>();
   /** The user clicked another node (a gateway in "Heard by"). */
   readonly showNode = output<number>();
+  /** Actions (message, position, traceroute, register) need an account. */
+  readonly signedIn = input(true);
 
   protected readonly detail = rxResource({
     params: () => this.nodeNum(),

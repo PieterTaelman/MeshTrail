@@ -5,6 +5,7 @@ using Meshtrail.Core.Application.UseCases.Gateways.Commands.RevokeGateway;
 using Meshtrail.Core.Application.UseCases.Gateways.Queries.GetGateways;
 using Meshtrail.Core.Application.UseCases.Gateways.Queries.GetGatewaySummary;
 using Meshtrail.Core.Contracts.Mesh;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Meshtrail.WebApi.Controllers;
@@ -15,25 +16,35 @@ namespace Meshtrail.WebApi.Controllers;
 [Route("api/v{version:apiVersion}/gateways")]
 public sealed class GatewaysController(ISender sender) : ControllerBase
 {
-    /// <summary>?mine=true: your gateways (pending ones included). Otherwise every active gateway.</summary>
+    /// <summary>?mine=true: your gateways (pending ones included; needs sign-in). Otherwise every active gateway (public).</summary>
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<GatewayDto>>> GetList([FromQuery] bool mine, CancellationToken cancellationToken) =>
-        Ok(await sender.Send(new GetGatewaysQuery(mine), cancellationToken));
+    [AllowAnonymous]
+    public async Task<ActionResult<IReadOnlyList<GatewayDto>>> GetList([FromQuery] bool mine, CancellationToken cancellationToken)
+    {
+        if (mine && User.Identity?.IsAuthenticated != true)
+        {
+            return Unauthorized();
+        }
 
-    /// <summary>Online and total number of gateways (the top-bar chip).</summary>
+        return Ok(await sender.Send(new GetGatewaysQuery(mine), cancellationToken));
+    }
+
+    /// <summary>Online and total number of gateways (the top-bar chip). Public.</summary>
     [HttpGet("summary")]
+    [AllowAnonymous]
     public async Task<ActionResult<GatewaySummaryDto>> GetSummary(CancellationToken cancellationToken) =>
         Ok(await sender.Send(new GetGatewaySummaryQuery(), cancellationToken));
 
     /// <summary>
-    /// Creates MQTT credentials for a new gateway. The password is in this answer only. The gateway stays Pending until
-    /// the first uplink with these credentials, which ties it to that node.
+    /// Makes one of your nodes a gateway: MQTT credentials that only work for that node. The password is in this answer
+    /// only. Pending until the node's first uplink, which also registers the node to you. 422 when the node already is
+    /// a gateway (remove it first) or belongs to someone else.
     /// </summary>
     [HttpPost]
     [ProducesResponseType(StatusCodes.Status201Created)]
-    public async Task<ActionResult<GatewayCredentialsDto>> Add(CancellationToken cancellationToken)
+    public async Task<ActionResult<GatewayCredentialsDto>> Add(AddGatewayRequest request, CancellationToken cancellationToken)
     {
-        var credentials = await sender.Send(new AddGatewayCommand(), cancellationToken);
+        var credentials = await sender.Send(new AddGatewayCommand(request.NodeNum), cancellationToken);
         return CreatedAtAction(nameof(GetList), new { version = "1", mine = true }, credentials);
     }
 

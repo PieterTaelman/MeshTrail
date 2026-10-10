@@ -87,6 +87,17 @@
           [class.border-content-border]="realtimeStatus() !== 'connected'"
           >{{ realtimeStatus() === 'connected' ? 'LIVE' : 'OFFLINE' }}</span
         >
+        @if (auth.profile(); as profile) {
+          <a
+            routerLink="/profile"
+            class="font-sans text-sm text-foreground hover:text-primary"
+            aria-label="Your profile"
+            >{{ profile.displayName }}</a
+          >
+        } @else {
+          <a routerLink="/account/sign-in" class="font-sans text-sm text-primary">Sign in</a>
+          <a routerLink="/account/register" class="font-sans text-sm text-primary">Register</a>
+        }
       </div>
     </header>
 

@@ -5,30 +5,35 @@
   >
     <div class="flex items-center gap-3">
       <span class="app-eyebrow">Operations</span>
-      <app-gateway-chip [summary]="gatewaySummary.value()" (opened)="openPanel('gateways')" />
+      <app-gateway-chip [summary]="gatewaySummary.value()" (opened)="openGateways()" />
     </div>
     <div class="flex items-center gap-4 font-mono text-xs text-muted-color">
-      <p-button
-        label="My gateways"
-        size="small"
-        severity="secondary"
-        [outlined]="true"
-        (onClick)="openPanel('gateways')"
-      />
-      <p-button
-        label="Teams"
-        size="small"
-        severity="secondary"
-        [outlined]="true"
-        (onClick)="openPanel('teams')"
-      />
-      <p-button
-        label="Register node"
-        size="small"
-        severity="secondary"
-        [outlined]="true"
-        (onClick)="registrationOpen.set(true)"
-      />
+      @if (auth.isSignedIn()) {
+        <a
+          routerLink="/profile"
+          [queryParams]="{ tab: 'gateways' }"
+          class="rounded-md border border-content-border px-2 py-1 hover:bg-content-hover"
+          >My gateways</a
+        >
+        <a
+          routerLink="/profile"
+          [queryParams]="{ tab: 'nodes' }"
+          class="rounded-md border border-content-border px-2 py-1 hover:bg-content-hover"
+          >My nodes</a
+        >
+        <a
+          routerLink="/profile"
+          [queryParams]="{ tab: 'teams' }"
+          class="rounded-md border border-content-border px-2 py-1 hover:bg-content-hover"
+          >My teams</a
+        >
+      } @else {
+        <a
+          routerLink="/account/sign-in"
+          class="rounded-md border border-primary px-2 py-1 text-primary hover:bg-content-hover"
+          >Sign in to chat and manage your nodes</a
+        >
+      }
       <span>{{ searching() ? 'FOUND' : 'IN VIEW' }} {{ listedTotal() }}</span>
       <span class="text-green-500">ONLINE {{ onlineCount() }}</span>
     </div>
@@ -165,27 +170,15 @@
         (messageNode)="openConversation($event)"
         (registerNode)="registrationOpen.set(true)"
         (showNode)="showNodeDetail($event)"
-      />
-    } @else if (sidePanel() === 'gateways') {
-      <app-gateways-panel
-        class="lg:w-80 lg:shrink-0"
-        [now]="now()"
-        (closed)="sidePanel.set(null)"
-        (showNode)="showNodeDetail($event)"
-      />
-    } @else if (sidePanel() === 'teams') {
-      <app-teams-panel
-        class="lg:w-80 lg:shrink-0"
-        [teams]="myTeams()"
-        (closed)="sidePanel.set(null)"
-        (changed)="teams.reload()"
-        (openChat)="openTeamChat($event)"
+        [signedIn]="auth.isSignedIn()"
       />
     }
   </div>
 
-  <!-- Bottom: team chat and direct messages -->
-  <app-chat-drawer [nodes]="listedNodes()" [teams]="myTeams()" />
+  <!-- Bottom: team chat and direct messages (signed in only) -->
+  @if (auth.isSignedIn()) {
+    <app-chat-drawer [nodes]="listedNodes()" [teams]="myTeams()" />
+  }
 </section>
 
 <app-registration-dialog [(visible)]="registrationOpen" />
